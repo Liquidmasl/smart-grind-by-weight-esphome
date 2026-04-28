@@ -1,3 +1,5 @@
+// weight_sensor.cpp — HX711 polling + filtering + persistence.
+// (Touch to invalidate ESPHome's incremental build cache.)
 #include "weight_sensor.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
