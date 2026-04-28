@@ -135,38 +135,9 @@ number:
       then:
         - lambda: id(grind_ctrl).set_chute_amount_g(x);
 
-  - platform: template
-    name: "Display Brightness"
-    id: num_display_brightness
-    min_value: 5
-    max_value: 100
-    step: 5
-    unit_of_measurement: "%"
-    mode: slider
-    restore_value: true
-    initial_value: 100
-    optimistic: true
-    set_action:
-      then:
-        - lambda: |-
-            id(display_brightness_pct) = x;
-            id(main_display).set_brightness(x / 100.0f);
-            id(display_dimmed) = false;
-
-  - platform: template
-    name: "Display Auto-Off (seconds)"
-    id: num_display_auto_off
-    min_value: 0
-    max_value: 1800
-    step: 10
-    unit_of_measurement: s
-    mode: box
-    restore_value: true
-    initial_value: 120
-    optimistic: true
-    set_action:
-      then:
-        - lambda: 'id(display_auto_off_s) = (int)x;'
+  # NOTE: brightness + auto-off temporarily removed while we figure out
+  # whether mipi_spi's runtime brightness API is float (0..1) or uint8 (0..255).
+  # See black-screen incident — re-add once verified.
 
 # ── HA-exposed selects ────────────────────────────────────────────────────────
 select:
@@ -394,26 +365,7 @@ interval:
             - lambda: 'id(grind_ctrl).stop_grind();'
             - lvgl.page.show: page_ready
 
-  # Display auto-off: dim to 0 brightness after `display_auto_off_s` of
-  # touchscreen idle. on_touch in hardware.yaml restores brightness.
-  # Suppressed during an active grind so the screen never goes dark mid-shot.
-  - interval: 2s
-    then:
-      - if:
-          condition:
-            lambda: |-
-              if (id(display_auto_off_s) <= 0) return false;
-              if (id(display_dimmed)) return false;
-              if (id(grind_ctrl).is_active()) return false;
-              uint32_t last = id(last_touch_ms);
-              if (last == 0) { id(last_touch_ms) = millis(); return false; }
-              uint32_t idle_ms = millis() - last;
-              return idle_ms >= (uint32_t)id(display_auto_off_s) * 1000u;
-          then:
-            - lambda: |-
-                id(main_display).set_brightness(0.0f);
-                id(display_dimmed) = true;
-                ESP_LOGI("display", "Auto-off after %d s idle", id(display_auto_off_s));
+  # Display auto-off temporarily disabled — see note above.
 
 # ── Version / build info ──────────────────────────────────────────────────────
 text_sensor:

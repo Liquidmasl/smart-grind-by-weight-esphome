@@ -127,10 +127,6 @@ touchscreen:
       - lambda: |-
           ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
           id(last_touch_ms) = millis();
-          if (id(display_dimmed)) {
-            id(main_display).set_brightness(id(display_brightness_pct) / 100.0f);
-            id(display_dimmed) = false;
-          }
 
 # ── Display — Waveshare 1.64" AMOLED (CO5300 via QSPI) ───────────────────────
 # Uses ESPHome's built-in mipi_spi platform with the bundled CO5300 init
