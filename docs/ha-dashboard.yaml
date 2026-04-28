@@ -1,0 +1,443 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Smart Grinder — Home Assistant Dashboard
+# Paste into a new dashboard (or a "Manual" view) in HA.
+#
+# Required (HACS):
+#   - apexcharts-card                    https://github.com/RomRider/apexcharts-card
+#
+# Optional (HACS, for prettier tiles — uses standard cards if you skip):
+#   - mushroom                           https://github.com/piitaya/lovelace-mushroom
+#
+# Entity IDs assume device name "smart-grinder". If your ESPHome name differs,
+# do a find-and-replace from `smart_grinder` to whatever yours is.
+#
+# Recommended HA scripts to add (Settings → Automations & Scenes → Scripts):
+#   See block at the very bottom of this file. They make the profile buttons
+#   work as one-tap "set target + start grind".
+# ──────────────────────────────────────────────────────────────────────────────
+
+title: Smart Grinder
+icon: mdi:coffee-maker
+path: smart-grinder
+type: sections
+max_columns: 2
+sections:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECTION 1 — Live status
+  # ──────────────────────────────────────────────────────────────────────────
+  - type: grid
+    column_span: 2
+    cards:
+      - type: heading
+        heading: Live
+        heading_style: title
+        icon: mdi:coffee
+
+      - type: horizontal-stack
+        cards:
+          - type: gauge
+            entity: sensor.smart_grinder_grind_weight
+            name: Weight
+            unit: g
+            min: 0
+            max: 30
+            severity:
+              green: 0
+              yellow: 0
+              red: 25
+            needle: true
+
+          - type: gauge
+            entity: sensor.smart_grinder_grind_progress
+            name: Progress
+            unit: "%"
+            min: 0
+            max: 100
+            needle: true
+
+          - type: gauge
+            entity: sensor.smart_grinder_flow_rate
+            name: Flow
+            unit: g/s
+            min: 0
+            max: 4
+            needle: true
+
+      - type: tile
+        entity: sensor.smart_grinder_grind_phase
+        name: Phase
+        icon: mdi:state-machine
+        color: primary
+
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: sensor.smart_grinder_grind_phase
+            state_not: IDLE
+        card:
+          type: custom:apexcharts-card
+          header:
+            show: true
+            title: Live grind
+            show_states: true
+          graph_span: 60s
+          update_interval: 500ms
+          span:
+            end: minute
+          all_series_config:
+            stroke_width: 2
+          series:
+            - entity: sensor.smart_grinder_grind_weight
+              name: Weight
+              color: "#FF3D00"
+              unit: g
+              type: line
+            - entity: sensor.smart_grinder_flow_rate
+              name: Flow
+              color: "#00AAFF"
+              unit: g/s
+              type: line
+              yaxis_id: flow
+          yaxis:
+            - id: weight
+              decimals: 1
+            - id: flow
+              opposite: true
+              decimals: 2
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECTION 2 — Quick actions (one-tap profiles + raw controls)
+  # ──────────────────────────────────────────────────────────────────────────
+  - type: grid
+    cards:
+      - type: heading
+        heading: Quick actions
+        icon: mdi:gesture-tap-button
+
+      # One-tap profile buttons (see scripts at the bottom of this file)
+      - type: horizontal-stack
+        cards:
+          - type: button
+            name: Single
+            icon: mdi:coffee-outline
+            tap_action:
+              action: perform-action
+              perform_action: script.grinder_start_single
+            hold_action:
+              action: more-info
+              entity: number.smart_grinder_target_weight_g
+          - type: button
+            name: Double
+            icon: mdi:coffee
+            tap_action:
+              action: perform-action
+              perform_action: script.grinder_start_double
+            hold_action:
+              action: more-info
+              entity: number.smart_grinder_target_weight_g
+          - type: button
+            name: Custom
+            icon: mdi:coffee-to-go
+            tap_action:
+              action: perform-action
+              perform_action: script.grinder_start_custom
+            hold_action:
+              action: more-info
+              entity: number.smart_grinder_target_weight_g
+
+      - type: horizontal-stack
+        cards:
+          - type: button
+            entity: button.smart_grinder_tare_scale
+            name: Tare
+            icon: mdi:scale-balance
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.smart_grinder_tare_scale
+
+          - type: button
+            entity: button.smart_grinder_stop_grind
+            name: Stop
+            icon: mdi:stop-circle
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.smart_grinder_stop_grind
+
+          - type: button
+            entity: button.smart_grinder_additional_pulse
+            name: Pulse
+            icon: mdi:flash
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.smart_grinder_additional_pulse
+
+          - type: button
+            entity: button.smart_grinder_continue_from_purge
+            name: Continue
+            icon: mdi:arrow-right-circle
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.smart_grinder_continue_from_purge
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECTION 3 — Last shot result
+  # ──────────────────────────────────────────────────────────────────────────
+  - type: grid
+    cards:
+      - type: heading
+        heading: Last shot
+        icon: mdi:check-circle-outline
+
+      - type: glance
+        show_name: true
+        show_icon: true
+        show_state: true
+        columns: 4
+        entities:
+          - entity: sensor.smart_grinder_last_grind_final_weight
+            name: Final
+            icon: mdi:scale
+          - entity: sensor.smart_grinder_last_grind_error
+            name: Error
+            icon: mdi:plus-minus
+          - entity: sensor.smart_grinder_last_grind_duration
+            name: Duration
+            icon: mdi:timer-outline
+          - entity: sensor.smart_grinder_pulse_count
+            name: Pulses
+            icon: mdi:flash
+
+      # Error trend over the last ~30 grinds. Uses HA's recorder history,
+      # so make sure recorder retention is at least 7 days.
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Error per shot (last 24h)
+          show_states: false
+        graph_span: 24h
+        span:
+          end: minute
+        apex_config:
+          chart:
+            height: 220
+        series:
+          - entity: sensor.smart_grinder_last_grind_error
+            name: Error
+            color: "#FF3D00"
+            type: column
+            group_by:
+              func: last
+              duration: 1m
+            stroke_width: 0
+
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Final weight per shot (last 24h)
+        graph_span: 24h
+        span:
+          end: minute
+        apex_config:
+          chart:
+            height: 200
+        series:
+          - entity: sensor.smart_grinder_last_grind_final_weight
+            name: Final
+            color: "#00AAFF"
+            type: column
+            group_by:
+              func: last
+              duration: 1m
+            stroke_width: 0
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECTION 4 — Settings
+  # ──────────────────────────────────────────────────────────────────────────
+  - type: grid
+    cards:
+      - type: heading
+        heading: Settings
+        icon: mdi:tune
+
+      - type: entities
+        title: Targets
+        entities:
+          - entity: select.smart_grinder_grind_mode
+            name: Mode
+          - entity: number.smart_grinder_target_weight_g
+            name: Target weight
+          - entity: number.smart_grinder_target_time_s
+            name: Target time
+
+      - type: entities
+        title: Purge / freshness
+        entities:
+          - entity: select.smart_grinder_chute_mode
+            name: Chute mode
+          - entity: number.smart_grinder_purge_amount_g
+            name: Purge amount
+          - entity: number.smart_grinder_freshness_hours
+            name: Freshness window
+
+      - type: entities
+        title: Behaviour
+        entities:
+          - entity: switch.smart_grinder_auto_grind_on_cup
+            name: Auto-grind on cup placed
+          - entity: switch.smart_grinder_return_on_removal
+            name: Return to ready on removal
+          - entity: switch.smart_grinder_swipe_gestures
+            name: Swipe gestures
+
+      - type: entities
+        title: Display
+        entities:
+          - entity: switch.smart_grinder_screen
+            name: Screen on/off
+          - entity: number.smart_grinder_screen_timeout
+            name: Screen auto-off
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECTION 5 — Calibration & tuning
+  # ──────────────────────────────────────────────────────────────────────────
+  - type: grid
+    cards:
+      - type: heading
+        heading: Calibration & tuning
+        icon: mdi:scale-balance
+
+      - type: entities
+        title: Calibration
+        entities:
+          - entity: binary_sensor.smart_grinder_load_cell_calibrated
+            name: Calibrated
+          - entity: number.smart_grinder_calibration_reference_weight_g
+            name: Reference weight
+          - entity: number.smart_grinder_calibration_factor
+            name: Cal factor (advanced)
+
+      - type: horizontal-stack
+        cards:
+          - type: button
+            entity: button.smart_grinder_tare_scale
+            name: Tare
+            icon: mdi:scale-balance
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.smart_grinder_tare_scale
+          - type: button
+            entity: button.smart_grinder_start_calibration
+            name: Calibrate
+            icon: mdi:check-decagram
+            tap_action:
+              action: perform-action
+              perform_action: button.press
+              target:
+                entity_id: button.smart_grinder_start_calibration
+
+      - type: entities
+        title: Motor tuning
+        entities:
+          - entity: number.smart_grinder_motor_latency_ms
+            name: Motor latency
+          - entity: button.smart_grinder_start_autotune
+            name: Auto-tune motor
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SECTION 6 — Diagnostics
+  # ──────────────────────────────────────────────────────────────────────────
+  - type: grid
+    cards:
+      - type: heading
+        heading: Diagnostics
+        icon: mdi:stethoscope
+
+      - type: entities
+        entities:
+          - entity: binary_sensor.smart_grinder_load_cell_calibrated
+            name: Load cell calibrated
+          - entity: sensor.smart_grinder_mechanical_anomalies
+            name: Mechanical anomalies
+          - entity: sensor.smart_grinder_motor_latency
+            name: Motor response latency
+          - entity: sensor.smart_grinder_grind_phase
+            name: Current phase
+
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Mechanical anomalies (last 7d)
+        graph_span: 7d
+        series:
+          - entity: sensor.smart_grinder_mechanical_anomalies
+            name: Anomalies
+            color: "#CC8800"
+            type: line
+            stroke_width: 2
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HA scripts (paste into Settings → Automations & Scenes → Scripts → YAML mode)
+# ──────────────────────────────────────────────────────────────────────────────
+# script:
+#   grinder_start_single:
+#     alias: Grinder — Single shot
+#     sequence:
+#       - service: number.set_value
+#         target:
+#           entity_id: number.smart_grinder_target_weight_g
+#         data:
+#           value: 9.0
+#       - service: select.select_option
+#         target:
+#           entity_id: select.smart_grinder_grind_mode
+#         data:
+#           option: Weight
+#       - service: button.press
+#         target:
+#           entity_id: button.smart_grinder_start_grind
+#
+#   grinder_start_double:
+#     alias: Grinder — Double shot
+#     sequence:
+#       - service: number.set_value
+#         target:
+#           entity_id: number.smart_grinder_target_weight_g
+#         data:
+#           value: 18.0
+#       - service: select.select_option
+#         target:
+#           entity_id: select.smart_grinder_grind_mode
+#         data:
+#           option: Weight
+#       - service: button.press
+#         target:
+#           entity_id: button.smart_grinder_start_grind
+#
+#   grinder_start_custom:
+#     alias: Grinder — Custom shot
+#     sequence:
+#       - service: number.set_value
+#         target:
+#           entity_id: number.smart_grinder_target_weight_g
+#         data:
+#           value: 21.5
+#       - service: select.select_option
+#         target:
+#           entity_id: select.smart_grinder_grind_mode
+#         data:
+#           option: Weight
+#       - service: button.press
+#         target:
+#           entity_id: button.smart_grinder_start_grind
