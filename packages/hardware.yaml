@@ -122,6 +122,7 @@ touchscreen:
     transform:
       mirror_x: true
       mirror_y: true
+      swap_xy: false
     on_touch:
       - lambda: |-
           ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
@@ -160,6 +161,7 @@ display:
     transform:
       mirror_x: true
       mirror_y: true
+      swap_xy: false
     update_interval: never  # LVGL drives refresh
     auto_clear_enabled: false
 
