@@ -1,16 +1,16 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Smart Grinder — Home Assistant Dashboard (full dashboard YAML)
+# Smart Grinder — Home Assistant Dashboard
 #
 # How to use:
 #   Settings → Dashboards → "+ Add dashboard" → "From scratch" → name it →
 #   open it → 3-dot menu → "Edit dashboard" → 3-dot menu → "Raw configuration
-#   editor" → REPLACE everything with the contents of this file → Save.
+#   editor" → replace everything with this file → Save.
 #
 # Required (HACS):
 #   - apexcharts-card    https://github.com/RomRider/apexcharts-card
 #
 # Entity IDs assume device name "smart-grinder". If yours differs, find-and-
-# replace `smart_grinder` with whatever HA shows under Settings → Devices.
+# replace `smart_grinder` with your device name from Settings → Devices.
 # ──────────────────────────────────────────────────────────────────────────────
 
 title: Smart Grinder
@@ -23,7 +23,7 @@ views:
     sections:
 
       # ──────────────────────────────────────────────────────────────────
-      # SECTION 1 — Live status
+      # SECTION 1 — Live status  (full width)
       # ──────────────────────────────────────────────────────────────────
       - type: grid
         column_span: 2
@@ -31,7 +31,7 @@ views:
           - type: heading
             heading: Live
             heading_style: title
-            icon: mdi:coffee
+            icon: mdi:chart-line-variant
 
           - type: horizontal-stack
             cards:
@@ -42,6 +42,10 @@ views:
                 min: 0
                 max: 30
                 needle: true
+                severity:
+                  green: 0
+                  yellow: 20
+                  red: 27
               - type: gauge
                 entity: sensor.smart_grinder_grind_progress
                 name: Progress
@@ -49,6 +53,10 @@ views:
                 min: 0
                 max: 100
                 needle: true
+                severity:
+                  green: 0
+                  yellow: 75
+                  red: 95
               - type: gauge
                 entity: sensor.smart_grinder_flow_rate
                 name: Flow
@@ -56,12 +64,17 @@ views:
                 min: 0
                 max: 4
                 needle: true
+                severity:
+                  green: 0.3
+                  yellow: 2.5
+                  red: 3.5
 
           - type: tile
             entity: sensor.smart_grinder_grind_phase
             name: Phase
             icon: mdi:state-machine
             color: primary
+            state_color: true
 
           - type: conditional
             conditions:
@@ -78,17 +91,23 @@ views:
               update_interval: 500ms
               span:
                 end: minute
+              apex_config:
+                chart:
+                  background: transparent
+                  height: 220
+                grid:
+                  borderColor: var(--divider-color)
               all_series_config:
                 stroke_width: 2
               series:
                 - entity: sensor.smart_grinder_grind_weight
                   name: Weight
-                  color: "#FF3D00"
+                  color: "#FF6D00"
                   unit: g
                   type: line
                 - entity: sensor.smart_grinder_flow_rate
                   name: Flow
-                  color: "#00AAFF"
+                  color: "#29B6F6"
                   unit: g/s
                   type: line
                   yaxis_id: flow
@@ -106,12 +125,15 @@ views:
         cards:
           - type: heading
             heading: Quick actions
+            heading_style: title
             icon: mdi:gesture-tap-button
 
-          # Profile buttons — call the firmware-side preset grind buttons
-          # directly. The actual gram value comes from the Preset numbers
-          # below (Settings → Targets), and the firmware reads them at
-          # press-time so HA + on-device stay in sync.
+          - type: heading
+            heading: Grind profiles
+            heading_style: subtitle
+
+          # Buttons trigger the firmware-side preset grind actions.
+          # Gram values come from the Profile presets in Settings below.
           - type: horizontal-stack
             cards:
               - type: button
@@ -145,6 +167,10 @@ views:
                   target:
                     entity_id: button.smart_grinder_grind_custom
 
+          - type: heading
+            heading: Controls
+            heading_style: subtitle
+
           - type: horizontal-stack
             cards:
               - type: button
@@ -160,7 +186,7 @@ views:
               - type: button
                 entity: button.smart_grinder_stop_grind
                 name: Stop
-                icon: mdi:stop-circle
+                icon: mdi:stop-circle-outline
                 show_state: false
                 tap_action:
                   action: perform-action
@@ -170,7 +196,7 @@ views:
               - type: button
                 entity: button.smart_grinder_additional_pulse
                 name: Pulse
-                icon: mdi:flash
+                icon: mdi:lightning-bolt
                 show_state: false
                 tap_action:
                   action: perform-action
@@ -180,7 +206,7 @@ views:
               - type: button
                 entity: button.smart_grinder_continue_from_purge
                 name: Continue
-                icon: mdi:arrow-right-circle
+                icon: mdi:play-circle-outline
                 show_state: false
                 tap_action:
                   action: perform-action
@@ -195,124 +221,134 @@ views:
         cards:
           - type: heading
             heading: Last shot
+            heading_style: title
             icon: mdi:check-circle-outline
 
-          - type: glance
-            show_name: true
-            show_icon: true
-            show_state: true
-            columns: 4
-            entities:
-              - entity: sensor.smart_grinder_last_grind_final_weight
-                name: Final
+          - type: horizontal-stack
+            cards:
+              - type: tile
+                entity: sensor.smart_grinder_last_grind_final_weight
+                name: Final weight
                 icon: mdi:scale
-              - entity: sensor.smart_grinder_last_grind_error
+                color: blue
+              - type: tile
+                entity: sensor.smart_grinder_last_grind_error
                 name: Error
                 icon: mdi:plus-minus
-              - entity: sensor.smart_grinder_last_grind_duration
+                color: orange
+
+          - type: horizontal-stack
+            cards:
+              - type: tile
+                entity: sensor.smart_grinder_last_grind_duration
                 name: Duration
                 icon: mdi:timer-outline
-              - entity: sensor.smart_grinder_pulse_count
+                color: green
+              - type: tile
+                entity: sensor.smart_grinder_pulse_count
                 name: Pulses
-                icon: mdi:flash
+                icon: mdi:lightning-bolt
+                color: purple
 
+          # Combined weight + error history — weight as bars, error as line on
+          # the right axis so both fit without one dwarfing the other.
           - type: custom:apexcharts-card
             header:
               show: true
-              title: Error per shot (last 24h)
+              title: Shot history (last 24 h)
               show_states: false
             graph_span: 24h
             span:
               end: minute
             apex_config:
               chart:
-                height: 220
-            series:
-              - entity: sensor.smart_grinder_last_grind_error
-                name: Error
-                color: "#FF3D00"
-                type: column
-                group_by:
-                  func: last
-                  duration: 1m
-                stroke_width: 0
-
-          - type: custom:apexcharts-card
-            header:
-              show: true
-              title: Final weight per shot (last 24h)
-            graph_span: 24h
-            span:
-              end: minute
-            apex_config:
-              chart:
-                height: 200
+                height: 230
+                background: transparent
+              grid:
+                borderColor: var(--divider-color)
             series:
               - entity: sensor.smart_grinder_last_grind_final_weight
-                name: Final
-                color: "#00AAFF"
+                name: Final weight
+                color: "#29B6F6"
                 type: column
                 group_by:
                   func: last
                   duration: 1m
                 stroke_width: 0
+              - entity: sensor.smart_grinder_last_grind_error
+                name: Error
+                color: "#FF6D00"
+                type: line
+                group_by:
+                  func: last
+                  duration: 1m
+                stroke_width: 2
+                yaxis_id: error
+            yaxis:
+              - id: weight
+                decimals: 1
+              - id: error
+                opposite: true
+                decimals: 2
 
       # ──────────────────────────────────────────────────────────────────
-      # SECTION 4 — Settings
+      # SECTION 4 — Settings  (full width, 2×2 grid of entity groups)
       # ──────────────────────────────────────────────────────────────────
       - type: grid
+        column_span: 2
         cards:
           - type: heading
             heading: Settings
+            heading_style: title
             icon: mdi:tune
 
-          - type: entities
-            title: Targets
-            entities:
-              - entity: select.smart_grinder_grind_mode
-                name: Mode
-              - entity: number.smart_grinder_target_weight_g
-                name: Target weight
-              - entity: number.smart_grinder_target_time_s
-                name: Target time
+          - type: horizontal-stack
+            cards:
+              - type: entities
+                title: Targets
+                entities:
+                  - entity: select.smart_grinder_grind_mode
+                    name: Mode
+                  - entity: number.smart_grinder_target_weight_g
+                    name: Target weight
+                  - entity: number.smart_grinder_target_time_s
+                    name: Target time
 
-          - type: entities
-            title: Profile presets (one-tap buttons)
-            entities:
-              - entity: number.smart_grinder_preset_single_g
-                name: Single
-              - entity: number.smart_grinder_preset_double_g
-                name: Double
-              - entity: number.smart_grinder_preset_custom_g
-                name: Custom
+              - type: entities
+                title: Profile presets
+                entities:
+                  - entity: number.smart_grinder_preset_single_g
+                    name: Single
+                  - entity: number.smart_grinder_preset_double_g
+                    name: Double
+                  - entity: number.smart_grinder_preset_custom_g
+                    name: Custom
 
-          - type: entities
-            title: Purge / freshness
-            entities:
-              - entity: select.smart_grinder_chute_mode
-                name: Chute mode
-              - entity: number.smart_grinder_purge_amount_g
-                name: Purge amount
-              - entity: number.smart_grinder_freshness_hours
-                name: Freshness window
+          - type: horizontal-stack
+            cards:
+              - type: entities
+                title: Purge & freshness
+                entities:
+                  - entity: select.smart_grinder_chute_mode
+                    name: Chute mode
+                  - entity: number.smart_grinder_purge_amount_g
+                    name: Purge amount
+                  - entity: number.smart_grinder_freshness_hours
+                    name: Freshness window
 
-          - type: entities
-            title: Behaviour
-            entities:
-              - entity: switch.smart_grinder_auto_grind_on_cup
-                name: Auto-grind on cup placed
-              - entity: switch.smart_grinder_return_on_removal
-                name: Return to ready on removal
-              - entity: switch.smart_grinder_swipe_gestures
-                name: Swipe gestures
-
-          - type: entities
-            title: Display
-            entities:
-              - entity: switch.smart_grinder_screen
-                name: Screen on/off
-              - entity: number.smart_grinder_screen_timeout
-                name: Screen auto-off
+              - type: entities
+                title: Behaviour & display
+                entities:
+                  - entity: switch.smart_grinder_auto_grind_on_cup
+                    name: Auto-grind on cup placed
+                  - entity: switch.smart_grinder_return_on_removal
+                    name: Return to ready on removal
+                  - entity: switch.smart_grinder_swipe_gestures
+                    name: Swipe gestures
+                  - entity: switch.smart_grinder_screen
+                    name: Screen on/off
+                  - entity: number.smart_grinder_screen_timeout
+                    name: Screen auto-off
 
       # ──────────────────────────────────────────────────────────────────
       # SECTION 5 — Calibration & tuning
@@ -321,10 +357,11 @@ views:
         cards:
           - type: heading
             heading: Calibration & tuning
+            heading_style: title
             icon: mdi:scale-balance
 
           - type: entities
-            title: Calibration
+            title: Scale calibration
             entities:
               - entity: binary_sensor.smart_grinder_load_cell_calibrated
                 name: Calibrated
@@ -371,6 +408,7 @@ views:
         cards:
           - type: heading
             heading: Diagnostics
+            heading_style: title
             icon: mdi:stethoscope
 
           - type: entities
@@ -387,11 +425,17 @@ views:
           - type: custom:apexcharts-card
             header:
               show: true
-              title: Mechanical anomalies (last 7d)
+              title: Mechanical anomalies (last 7 d)
             graph_span: 7d
+            apex_config:
+              chart:
+                background: transparent
+              grid:
+                borderColor: var(--divider-color)
             series:
               - entity: sensor.smart_grinder_mechanical_anomalies
                 name: Anomalies
-                color: "#CC8800"
-                type: line
+                color: "#FFA726"
+                type: area
                 stroke_width: 2
+                fill_raw: origin

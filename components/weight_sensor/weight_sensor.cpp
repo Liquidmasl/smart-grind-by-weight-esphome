@@ -1,5 +1,9 @@
 // weight_sensor.cpp — HX711 polling + filtering + persistence.
-// (Touch to invalidate ESPHome's incremental build cache.)
+//
+// InterruptLock around the bit-bang is required: the HX711 enters sleep
+// if PD_SCK stays high for >~60µs, which can happen if ESPHome's main loop
+// is preempted mid-read. Without the lock, ~1 in 50 reads gets garbage
+// bits and the weight reading jumps wildly.
 #include "weight_sensor.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -22,21 +26,25 @@ bool WeightSensorComponent::hx711_is_ready() const {
 bool WeightSensorComponent::hx711_read_raw(int32_t& out) {
     if (!hx711_is_ready()) return false;
 
-    // Read 24 bits MSB first, then clock out gain setting pulses
+    // Critical section: don't get preempted during the 24+gain bits. If we
+    // are, PD_SCK stays high too long and the HX711 sleeps mid-read.
     int32_t raw = 0;
-    for (int i = 0; i < 24; i++) {
-        clk_pin_->digital_write(true);
-        delayMicroseconds(1);
-        raw = (raw << 1) | (dout_pin_->digital_read() ? 1 : 0);
-        clk_pin_->digital_write(false);
-        delayMicroseconds(1);
-    }
-    // Gain select pulses (1=128/A, 2=32/B, 3=64/A)
-    for (int i = 0; i < gain_pulses_; i++) {
-        clk_pin_->digital_write(true);
-        delayMicroseconds(1);
-        clk_pin_->digital_write(false);
-        delayMicroseconds(1);
+    {
+        InterruptLock lock;
+        for (int i = 0; i < 24; i++) {
+            clk_pin_->digital_write(true);
+            delayMicroseconds(1);
+            raw = (raw << 1) | (dout_pin_->digital_read() ? 1 : 0);
+            clk_pin_->digital_write(false);
+            delayMicroseconds(1);
+        }
+        // Gain select pulses (1=128/A, 2=32/B, 3=64/A)
+        for (int i = 0; i < gain_pulses_; i++) {
+            clk_pin_->digital_write(true);
+            delayMicroseconds(1);
+            clk_pin_->digital_write(false);
+            delayMicroseconds(1);
+        }
     }
     // Sign extend 24-bit to 32-bit
     if (raw & 0x800000) raw |= 0xFF000000;
