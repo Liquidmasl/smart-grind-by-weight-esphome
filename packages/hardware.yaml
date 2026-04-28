@@ -18,7 +18,9 @@ weight_sensor:
   id: weight_sensor_component
   dout_pin: GPIO3
   clk_pin: GPIO2
-  calibration_factor: -7050.0  # USER_DEFAULT_CALIBRATION_FACTOR
+  # Sign here depends on load-cell wiring; flip if readings are negative.
+  # 7050 magnitude is the original firmware's USER_DEFAULT_CALIBRATION_FACTOR.
+  calibration_factor: 7050.0
   sample_rate_sps: 10           # HW_LOADCELL_SAMPLE_RATE_SPS
 
 # ── Grind controller custom component ─────────────────────────────────────────
@@ -154,7 +156,7 @@ display:
       offset_height: 0
     data_rate: 40MHz
     color_depth: 16
-    invert_colors: true
+    invert_colors: false
     transform:
       mirror_x: true
       mirror_y: true

@@ -209,8 +209,9 @@ void WeightSensorComponent::set_calibration_factor_runtime(float factor) {
 
 bool WeightSensorComponent::is_calibrated() const {
     if (cal_flag_cached_) return cal_flag_value_;
-    // Default to true if factor differs from factory default (user has calibrated)
-    cal_flag_value_ = (fabsf(cal_factor_ - (-7050.0f)) > 1.0f);
+    // Treat the factory default magnitude (|7050|) as "uncalibrated"; user
+    // has calibrated once the factor is meaningfully different.
+    cal_flag_value_ = (fabsf(fabsf(cal_factor_) - 7050.0f) > 1.0f);
     cal_flag_cached_ = true;
     return cal_flag_value_;
 }
