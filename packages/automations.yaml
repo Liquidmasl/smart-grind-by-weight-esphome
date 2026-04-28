@@ -280,6 +280,29 @@ button:
       then:
         - lambda: id(grind_ctrl).start_autotune();
 
+  # One-tap profile grinds — read the preset value at press time so HA
+  # dashboards and on-device buttons stay in sync.
+  - platform: template
+    name: "Grind Single"
+    on_press:
+      then:
+        - lambda: |-
+            id(grind_ctrl).start_grind_weight(id(num_preset_single).state, 0);
+
+  - platform: template
+    name: "Grind Double"
+    on_press:
+      then:
+        - lambda: |-
+            id(grind_ctrl).start_grind_weight(id(num_preset_double).state, 1);
+
+  - platform: template
+    name: "Grind Custom"
+    on_press:
+      then:
+        - lambda: |-
+            id(grind_ctrl).start_grind_weight(id(num_preset_custom).state, 2);
+
 # ── HA-exposed switches ───────────────────────────────────────────────────────
 switch:
   - platform: template
