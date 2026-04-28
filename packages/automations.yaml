@@ -147,9 +147,20 @@ number:
     initial_value: 100.0
     optimistic: true
 
-  # NOTE: brightness + auto-off temporarily removed while we figure out
-  # whether mipi_spi's runtime brightness API is float (0..1) or uint8 (0..255).
-  # See black-screen incident — re-add once verified.
+  # ── Screen timeout ─────────────────────────────────────────────────────────
+  # Seconds of touchscreen idle before we lvgl.pause (screen goes black).
+  # 0 disables the auto-off. Touching the panel resumes it.
+  - platform: template
+    name: "Screen Timeout"
+    id: screen_timeout
+    optimistic: true
+    min_value: 0
+    max_value: 1800
+    step: 10
+    initial_value: 120
+    restore_value: true
+    unit_of_measurement: s
+    mode: box
 
 # ── HA-exposed selects ────────────────────────────────────────────────────────
 select:
@@ -232,6 +243,42 @@ button:
       then:
         - lambda: id(grind_ctrl).start_autotune();
 
+# ── Scripts ───────────────────────────────────────────────────────────────────
+script:
+  # Wraps a weight-mode grind start. Occasionally plays a brief intro instead,
+  # which simply returns to the ready screen — no grind takes place.
+  - id: maybe_start_grind_weight
+    parameters:
+      target_g: float
+      profile_id: int
+    then:
+      - if:
+          condition:
+            lambda: 'return (esphome::random_uint32() % 100) == 0;'
+          then:
+            - lvgl.page.show: page_intro
+            - delay: 5s
+            - lvgl.page.show: page_ready
+          else:
+            - lambda: 'id(grind_ctrl).start_grind_weight(target_g, profile_id);'
+            - lvgl.page.show: page_grinding
+
+  # Same wrapper for time-mode grinds.
+  - id: maybe_start_grind_time
+    parameters:
+      target_s: float
+    then:
+      - if:
+          condition:
+            lambda: 'return (esphome::random_uint32() % 100) == 0;'
+          then:
+            - lvgl.page.show: page_intro
+            - delay: 5s
+            - lvgl.page.show: page_ready
+          else:
+            - lambda: 'id(grind_ctrl).start_grind_time(target_s);'
+            - lvgl.page.show: page_grinding
+
 # ── HA-exposed switches ───────────────────────────────────────────────────────
 switch:
   - platform: template
@@ -277,6 +324,24 @@ switch:
     turn_off_action:
       then:
         - lambda: id(grind_ctrl).set_swipe_enabled(false);
+
+  # Screen on/off — uses lvgl.pause/.resume since the AMOLED has no backlight
+  # pin. Pause stops drawing and the panel goes pure black (zero pixel power).
+  - platform: template
+    name: "Screen"
+    id: screen_switch
+    restore_mode: RESTORE_DEFAULT_ON
+    optimistic: true
+    turn_on_action:
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+      - lambda: 'id(last_touch_ms) = millis();'
+    turn_off_action:
+      - lvgl.pause:
+          show_snow: false
 
 # ── Interval: update UI labels every 250 ms ───────────────────────────────────
 interval:
@@ -357,13 +422,19 @@ interval:
               id(auto_grind_trigger_weight) = cw;
               return fire;
           then:
-            - lambda: |-
-                ESP_LOGI("auto_grind", "Cup placed (delta>50g), triggering grind");
-                if (id(sel_grind_mode).state == "Weight")
-                  id(grind_ctrl).start_grind_weight(id(num_target_weight).state);
-                else
-                  id(grind_ctrl).start_grind_time(id(num_target_time).state);
-            - lvgl.page.show: page_grinding
+            - lambda: 'ESP_LOGI("auto_grind", "Cup placed (delta>50g), triggering grind");'
+            - if:
+                condition:
+                  lambda: 'return id(sel_grind_mode).state == "Weight";'
+                then:
+                  - script.execute:
+                      id: maybe_start_grind_weight
+                      target_g: !lambda 'return id(num_target_weight).state;'
+                      profile_id: 0
+                else:
+                  - script.execute:
+                      id: maybe_start_grind_time
+                      target_s: !lambda 'return id(num_target_time).state;'
 
   # Return to ready after grind completed + cup removed
   - interval: 1000ms
@@ -378,7 +449,28 @@ interval:
             - lambda: 'id(grind_ctrl).stop_grind();'
             - lvgl.page.show: page_ready
 
-  # Display auto-off temporarily disabled — see note above.
+  # Screen auto-off: when touchscreen has been idle for `screen_timeout`
+  # seconds, lvgl.pause to blank. Touch wakes via the on_touch handler.
+  # Suppressed during an active grind so the screen never blanks mid-shot.
+  - interval: 2s
+    then:
+      - if:
+          condition:
+            and:
+              - lambda: |-
+                  if (id(screen_timeout).state <= 0) return false;
+                  if (id(grind_ctrl).is_active()) return false;
+                  uint32_t last = id(last_touch_ms);
+                  if (last == 0) { id(last_touch_ms) = millis(); return false; }
+                  uint32_t idle_ms = millis() - last;
+                  return idle_ms >= (uint32_t)id(screen_timeout).state * 1000u;
+              - lvgl.is_idle:
+                  timeout: 1s
+              - not: lvgl.is_paused
+          then:
+            - lvgl.pause:
+                show_snow: false
+            - lambda: 'ESP_LOGI("display", "Auto-off after %.0f s idle", id(screen_timeout).state);'
 
 # ── Version / build info ──────────────────────────────────────────────────────
 text_sensor:

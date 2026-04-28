@@ -127,6 +127,13 @@ touchscreen:
       - lambda: |-
           ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
           id(last_touch_ms) = millis();
+      # Wake from auto-off: if LVGL is paused, resume + redraw. The wake tap
+      # does NOT propagate to widgets since LVGL ignores input while paused.
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
 
 # ── Display — Waveshare 1.64" AMOLED (CO5300 via QSPI) ───────────────────────
 # Uses ESPHome's built-in mipi_spi platform with the bundled CO5300 init
@@ -179,3 +186,8 @@ font:
     size: 60
     bpp: 4
     glyphs: "0123456789.gs- "
+
+image:
+  - file: "images/cpp23_tr67.34.gif"
+    id: gif_intro
+    type: RGB565
