@@ -166,7 +166,7 @@ font:
     id: font32
     size: 32
     bpp: 4
-    glyphs: "0123456789.gOKCLSMENUABCDEFGHIJKLMNOPQRSTUVWXYZ+- "
+    glyphs: "0123456789.gABCDEFGHIJKLMNOPQRSTUVWXYZ+- "
   - file: "fonts/Montserrat-Regular.ttf"
     id: font36
     size: 36

@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# ESPHome build/cache
+.esphome/
+*.bin
+*.elf
+
+# Secrets — never commit
+secrets.yaml
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp

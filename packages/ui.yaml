@@ -6,7 +6,8 @@
 ################################################################################
 
 lvgl:
-  display_id: main_display
+  displays:
+    - main_display
   touchscreens:
     - touchscreen_id: main_touch
 
@@ -207,19 +208,21 @@ lvgl:
             align: TOP_MID
             y: 116
 
-        # Progress arc
+        # Progress arc — top-level styles the bg track (MAIN part);
+        # `indicator:` styles the active foreground arc.
         - arc:
             id: arc_progress
             x: 40
             y: 160
             width: 200
             height: 200
-            arc_color: 0xFF0000
+            arc_color: 0x303030
             arc_width: 12
-            bg_arc_color: 0x303030
-            bg_arc_width: 12
+            indicator:
+              arc_color: 0xFF0000
+              arc_width: 12
             start_angle: 135
-            end_angle: 405
+            end_angle: 45      # wraps past 360 → 270° sweep clockwise
             value: 0
             min_value: 0
             max_value: 100

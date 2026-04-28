@@ -8,6 +8,8 @@
 #include <alloca.h>
 #include "esphome/core/hal.h"   // millis()
 
+using esphome::millis;
+
 #define SPS  HW_LOADCELL_SAMPLE_RATE_SPS_CBM
 
 CircularBufferMath::CircularBufferMath()
