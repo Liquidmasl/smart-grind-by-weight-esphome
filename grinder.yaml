@@ -6,6 +6,11 @@
 esphome:
   name: smart-grinder
   friendly_name: Smart Grinder
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            id(main_display).set_brightness(id(display_brightness_pct) / 100.0f);
 
 esp32:
   board: esp32-s3-devkitc-1

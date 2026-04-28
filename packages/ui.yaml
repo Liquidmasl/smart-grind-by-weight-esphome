@@ -47,13 +47,8 @@ lvgl:
       text_color: 0xAAAAAA
       text_font: montserrat_32
 
-  # ── Idle timeout: dim after 5 minutes of inactivity ───────────────────
-  on_idle:
-    timeout: 300s
-    then:
-      - logger.log: "Screen auto-dim"
-      # The SH8501 does not have a hardware backlight PWM in this config.
-      # Future: use a GPIO-connected MOSFET or LEDC channel for brightness.
+  # Display dim / auto-off is handled in automations.yaml (interval +
+  # touchscreen on_touch) so it can use the HA-exposed timeout number.
 
   pages:
     # ────────────────────────────────────────────────────────────────────

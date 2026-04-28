@@ -126,6 +126,11 @@ touchscreen:
     on_touch:
       - lambda: |-
           ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
+          id(last_touch_ms) = millis();
+          if (id(display_dimmed)) {
+            id(main_display).set_brightness(id(display_brightness_pct) / 100.0f);
+            id(display_dimmed) = false;
+          }
 
 # ── Display — Waveshare 1.64" AMOLED (CO5300 via QSPI) ───────────────────────
 # Uses ESPHome's built-in mipi_spi platform with the bundled CO5300 init
@@ -150,10 +155,11 @@ display:
     dimensions:
       width: 280
       height: 456
-      # Offsets: tune on real hardware if the image is shifted or has a green
-      # line. The 1.43" sibling needs offset_width: 6; the 1.64" likely needs
-      # its own value — check the Waveshare LCD_Init.c or iterate.
-      offset_width: 0
+      # Iterate visually if image is shifted or shows a green strip.
+      # CO5300 esp_lcd driver defaults to CASET start = 0x16 = 22.
+      # Try sequentially: 22 → 6 → 0 → other values, watching where the
+      # image lands. Adjust offset_height if there's a vertical shift too.
+      offset_width: 22
       offset_height: 0
     data_rate: 40MHz
     color_depth: 16
