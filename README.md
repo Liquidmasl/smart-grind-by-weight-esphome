@@ -1,193 +1,182 @@
 # Smart Grind-by-Weight — ESPHome Port
 
-ESPHome 1:1 functional clone of the [Smart Grind-by-Weight PlatformIO firmware](../smart-grind-by-weight/), targeting the same hardware.  Every value, sensor, and calibration parameter is exposed to Home Assistant.
+ESPHome reimplementation of the
+[Smart Grind-by-Weight PlatformIO firmware](https://github.com/jaapp/smart-grind-by-weight)
+by jaapp, targeting the same hardware. The grind algorithm and accuracy targets
+are unchanged; the firmware is wrapped in ESPHome conventions so every value,
+sensor, control, and calibration parameter is exposed to Home Assistant.
+
+**Status:** functional. Display, touch, load cell, motor, predictive grind
+algorithm, calibration, and HA integration all working. A few second-tier
+features from the original are deferred or dropped — see
+[`docs/PORT_GAPS.md`](docs/PORT_GAPS.md).
 
 ## Hardware
 
-| Component | Part |
+| Component | Notes |
 |---|---|
-| MCU | Waveshare ESP32-S3 1.64" AMOLED (280×456 px) |
-| Display IC | CO5300 / SH8501B, QSPI |
-| Touch IC | FT3168, I2C 0x38 |
-| Load cell ADC | HX711, 10 SPS, channel A gain 128 |
-| Motor relay | Active-high GPIO |
+| **Waveshare ESP32-S3-Touch-AMOLED-1.64** | 280×456 AMOLED, CO5300 controller (QSPI), FT3168 capacitive touch |
+| **HX711** | 24-bit ADC for the load cell |
+| **MAVIN / T70 load cell** | 0.3–1 kg range; mounting per original docs |
+| **Motor relay** | Drives the grinder motor's existing control input. GPIO 18 active-high. |
+| **1000 µF capacitor** | On 5 V rail — brownout protection during motor inrush |
+
+Wiring is identical to the original; see the
+[original docs](https://github.com/jaapp/smart-grind-by-weight/blob/main/docs/DOC.md)
+for parts list, 3D-printed mounts, and step-by-step assembly.
 
 ### Pin map
 
-| Signal | GPIO |
+| Function | GPIO |
 |---|---|
-| Touch SDA | 47 |
-| Touch SCL | 48 |
 | Display CS | 9 |
 | Display SCK | 10 |
 | Display D0–D3 | 11, 12, 13, 14 |
 | Display RESET | 21 |
+| Touch SDA | 47 |
+| Touch SCL | 48 |
 | HX711 DOUT | 3 |
-| HX711 CLK | 2 |
+| HX711 SCK | 2 |
 | Motor relay | 18 |
-
-Wiring diagrams and BOM: see [`docs/DOC.md`](../smart-grind-by-weight/docs/DOC.md) in the sibling repo — hardware is identical.
-
-## Features
-
-- **Grind-by-weight** — predictive stop + up to 10 pulse corrections, ±0.03 g accuracy
-- **Grind-by-time** — timed grind with additional-pulse completion button
-- **Purge / Prime** — saturate grinder chute before main grind; shows confirmation popup when stale
-- **Freshness tracking** — auto-purge if last grind was more than N hours ago (configurable)
-- **Motor latency auto-tune** — binary search finds optimal motor response latency
-- **Calibration** — zero + known-weight two-point calibration
-- **LVGL touchscreen UI** — 7 screens matching the original firmware
-- **Home Assistant integration** — all live values, last-grind stats, and controls exposed
-- **OTA** — ESPHome native Wi-Fi OTA (replaces BLE OTA)
-- **Grind events** — `grind_started` and `grind_completed` HA events with full payload
-
-## What's NOT here (dropped by design)
-
-| Feature | Replacement |
-|---|---|
-| BLE custom GATT server | ESPHome native OTA + Wi-Fi |
-| Streamlit analytics tool | HA history graphs (see starter dashboard below) |
-| Web flasher | ESPHome standard install flow |
-| FreeRTOS dual-core tasks | ESPHome single-loop architecture |
-
-## Repository layout
-
-```
-smart-grind-by-weight-esphome/
-├── grinder.yaml              # Main ESPHome config entry point
-├── secrets.yaml.example      # Copy to secrets.yaml and fill in
-├── packages/
-│   ├── hardware.yaml         # GPIO, I2C, display, weight sensor, grind controller
-│   ├── ui.yaml               # LVGL screens (7 pages)
-│   └── automations.yaml      # Numbers, selects, buttons, switches, interval callbacks
-├── components/
-│   ├── grind_controller/     # Grind algorithm (phases, predictive, pulse corrections)
-│   ├── weight_sensor/        # HX711 + CircularBufferMath filtering
-│   └── sh8501_amoled/        # QSPI display driver (CO5300 / SH8501B)
-├── fonts/                    # Place Montserrat-Regular.ttf here
-└── images/                   # Icons (currently unused)
-```
-
-## Getting started
-
-### 1. Install ESPHome
-
-```bash
-pip install esphome
-```
-
-### 2. Add fonts
-
-Download [Montserrat-Regular.ttf](https://fonts.google.com/specimen/Montserrat) and place it in `fonts/`.
-
-### 3. Configure secrets
-
-```bash
-cp secrets.yaml.example secrets.yaml
-# Edit secrets.yaml with your Wi-Fi, API key, and OTA password
-```
-
-### 4. First flash (USB)
-
-```bash
-esphome run grinder.yaml
-```
-
-Subsequent flashes can use OTA:
-```bash
-esphome upload grinder.yaml
-```
-
-### 5. Calibrate the scale
-
-1. In Home Assistant → **Smart Grinder** → **Tare Scale** (empty portafilter basket)
-2. Place a 100 g reference weight
-3. Press **Start Calibration**
-4. Note the `Calibration Factor` sensor value for backup
-
-### 6. Run auto-tune
-
-1. Place an empty portafilter under the grinder
-2. In HA → **Start Autotune** (or via the device's Autotune screen)
-3. Wait ~2 minutes; the controller will find the motor response latency and save it
-
-## Migrating from the PlatformIO firmware
-
-1. On the original device, open **Menu → Diagnostics → System Info** and note:
-   - Calibration factor
-   - Motor latency
-2. Flash the ESPHome firmware
-3. In HA, set **Calibration Factor** and **Motor Latency** numbers to the values you noted
-
-## Home Assistant starter dashboard
-
-Add this to your `configuration.yaml` or Lovelace YAML:
-
-```yaml
-# Template sensors for per-grind statistics
-template:
-  - sensor:
-      - name: "Grind Accuracy"
-        state: >
-          {{ states('sensor.smart_grinder_last_grind_error') | float | abs | round(2) }}
-        unit_of_measurement: g
-
-# Example history graph card
-type: history-graph
-entities:
-  - entity: sensor.smart_grinder_last_grind_error
-    name: Error (g)
-  - entity: sensor.smart_grinder_last_grind_duration
-    name: Duration (ms)
-hours_to_show: 168
-```
-
-For per-grind events, create an automation in HA that listens to `esphome.grind_completed`:
-
-```yaml
-trigger:
-  - platform: event
-    event_type: esphome.grind_completed
-action:
-  - service: logbook.log
-    data:
-      name: Grinder
-      message: >
-        Profile {{ trigger.event.data.profile_id }},
-        {{ trigger.event.data.final_g }}g (error {{ trigger.event.data.error_g }}g),
-        {{ trigger.event.data.pulse_count }} pulses,
-        {{ trigger.event.data.duration_ms }}ms
-```
 
 ## Architecture
 
-The ESPHome port follows the same layered design as the original firmware but collapses the FreeRTOS dual-core split into a single-threaded `loop()`:
-
 ```
-hardware.yaml           → pin declarations, ESPHome component config
-components/weight_sensor → HX711 GPIO + CircularBufferMath (10 SPS)
-components/grind_controller → 16-phase state machine, IDF RMT pulses,
-                              predictive algorithm, auto-tune
-components/sh8501_amoled → IDF QSPI SPI master display driver
-packages/ui.yaml        → LVGL 9 declarative screens
-packages/automations.yaml → numbers/selects/buttons exposed to HA,
-                            auto-grind, return-on-removal, UI refresh
+grinder.yaml                       # main device config
+├─ packages/
+│  ├─ hardware.yaml                # GPIO, I2C, SPI, display, touch, weight, motor
+│  ├─ ui.yaml                      # LVGL pages, widgets, styles
+│  └─ automations.yaml             # HA-exposed numbers/buttons/switches/selects, intervals, scripts
+└─ components/                     # custom external components (C++)
+   ├─ grind_controller/            # phase machine + predictive grind algorithm + RMT motor pulses
+   └─ weight_sensor/               # HX711 driver + filtering + flow-rate analysis (CircularBufferMath)
 ```
 
-### Grind phases (identical to PlatformIO firmware)
+The grind algorithm (16-phase state machine, predictive flow detection,
+pulse-correction loop, mechanical-anomaly detection, prime/purge handling) is
+ported verbatim from the original PlatformIO C++ into the
+`grind_controller` external component. The hardware abstraction lives in
+`weight_sensor` (HX711 polling + signal filtering).
 
-`IDLE → INITIALIZING → SETUP → TARING → TARE_CONFIRM → PRIME → PRIME_SETTLING → [PURGE_CONFIRM →] PREDICTIVE → PULSE_SETTLING → PULSE_DECISION → PULSE_EXECUTE → … → FINAL_SETTLING → COMPLETED`
+The display is the **built-in `mipi_spi` ESPHome platform** with
+`model: CO5300`. No custom display driver — that was an early dead-end.
+The touch IC (FT3168) speaks the FT5x06 register set, so the built-in
+`platform: ft5x06` handles it.
 
-Time mode: `TARE_CONFIRM → TIME_GRINDING → FINAL_SETTLING → COMPLETED [→ TIME_ADDITIONAL_PULSE →]`
+## Setup
 
-## Known limitations / open items
+### Prerequisites
 
-1. **Display driver init sequence** — The CO5300 register init in `sh8501_amoled.cpp` is based on publicly available Waveshare BSP references.  If your panel has a different revision, compare with the Arduino_GFX `Arduino_CO5300` driver and adjust `init_display_registers()`.
+- Home Assistant with the **ESPHome add-on** (≥ 2025.8 — earlier versions
+  don't ship the CO5300 init sequence in `mipi_spi`)
+- HACS with **`apexcharts-card`** for the dashboard
+- A 32-byte base64 string for `api_encryption_key` (HA generates one when you
+  add the device)
 
-2. **LVGL version** — Requires ESPHome ≥ 2024.3 which ships LVGL 9.  The `on_swipe` handler syntax may vary; check the ESPHome LVGL docs for your version.
+### First flash (one-time, via USB)
 
-3. **FT3168 touchscreen** — ESPHome's `ft63x6` platform targets FT6336/FT6X36.  The FT3168 is register-compatible but verify the interrupt pin is wired and configured correctly.
+The device has never had your Wi-Fi creds, so OTA can't reach it yet.
 
-4. **Motor relay active-low** — The hardware config assumes active-high relay.  If your relay is active-low, add `inverted: true` to `motor_pin` in `hardware.yaml`.
+1. Copy this repo's contents into `/config/esphome/` on your HA host:
+   ```bash
+   rsync -av \
+     --exclude='.git' --exclude='secrets.yaml' --exclude='.esphome' \
+     /path/to/smart-grind-by-weight-esphome/ \
+     root@homeassistant.local:/config/esphome/
+   ```
+2. Create `/config/esphome/secrets.yaml`:
+   ```yaml
+   wifi_ssid: "YourWifi"
+   wifi_password: "..."
+   ap_password: "..."
+   api_encryption_key: "..."   # let HA generate when adding device
+   ota_password: "..."
+   ```
+3. In the ESPHome dashboard, click `smart-grinder` → **Install** → "Plug into
+   the computer running ESPHome Dashboard". Connect the board via USB-C to
+   that machine.
+4. After the first boot the device joins your Wi-Fi. From then on every
+   subsequent change is `Install → Wirelessly` (~30 s).
 
-5. **A/B accuracy validation** — Run 10 grinds side-by-side with the original firmware to confirm ±0.03 g is maintained.  The algorithm is a direct port but single-threaded timing may differ slightly.
+### Iterating
+
+```
+edit on Mac  →  git push  →  git pull on HA  →  ESPHome dashboard Install
+```
+
+`secrets.yaml` stays on HA only — never committed. The `.gitignore`
+excludes it along with `.esphome/build/` and macOS cruft.
+
+## Calibration
+
+Default `cal_factor` is `+7050` in `hardware.yaml`. Sign depends on load-cell
+wiring direction — flip in YAML if reading is negative when weight is added.
+Magnitude gets refined by the calibration procedure:
+
+1. Set the **HA "Calibration Reference Weight (g)"** number to your reference
+   (anything you can verify on a kitchen scale — two German 50-cent coins
+   = 15.6 g works well).
+2. Empty scale → press **Tare** (HA button or device menu).
+3. Place the reference → press **Calibrate**.
+
+`cal_factor` is persisted to NVS. Bumping the `_v2` suffix in
+`weight_sensor.h::PREF_KEY_*` forces a fresh slot if the YAML default sign
+ever changes.
+
+## Home Assistant entities
+
+ESPHome auto-creates HA entities under the device name `smart_grinder`. Pattern:
+`<domain>.smart_grinder_<entity>`. Highlights:
+
+**Live**: `sensor.smart_grinder_grind_weight`, `flow_rate`, `grind_progress`,
+`grind_phase` (text)
+
+**Buttons**: `tare_scale`, `start_grind`, `stop_grind`, `additional_pulse`,
+`continue_from_purge`, `start_calibration`, `start_autotune`,
+`grind_single`, `grind_double`, `grind_custom`
+
+**Numbers**: `target_weight_g`, `target_time_s`, `motor_latency_ms`,
+`calibration_factor`, `calibration_reference_weight_g`, `freshness_hours`,
+`purge_amount_g`, `preset_single_g`, `preset_double_g`, `preset_custom_g`,
+`screen_timeout`
+
+**Selects**: `grind_mode` (Weight/Time), `chute_mode` (Prime/Purge)
+
+**Switches**: `auto_grind_on_cup`, `return_on_removal`, `swipe_gestures`,
+`screen` (on/off)
+
+**Events fired** on every grind: `esphome.grind_started` and
+`esphome.grind_completed` with full payload (profile, target, final, error,
+pulse count, duration).
+
+A starter Lovelace dashboard with live gauges, profile shortcuts, last-shot
+results, error history, calibration controls and diagnostics lives in
+[`docs/ha-dashboard.yaml`](docs/ha-dashboard.yaml).
+
+## Differences from the original
+
+The grind algorithm and accuracy targets are unchanged. What's different:
+
+- **OTA + analytics** are HA-native, not BLE. Streamlit replaced by Lovelace
+  + `apexcharts-card`.
+- **Display offset** for the 1.64" panel is `offset_width: 20` (tuned visually).
+- **HX711 noise mitigation** uses `vTaskSuspendAll()` over the bit-bang
+  rather than full `InterruptLock` — the latter breaks the touch I2C probe
+  at boot.
+- **Setup ordering** is forced: `weight_sensor` runs at
+  `setup_priority::HARDWARE` (800), one tier above the touchscreen at
+  `DATA` (600). Its 1-second blocking HX711 init also acts as a guaranteed
+  delay so the FT3168 has time to come up before the touchscreen probes.
+
+Full gap list and what's worth backfilling: see [`docs/PORT_GAPS.md`](docs/PORT_GAPS.md).
+
+## Credits
+
+- Original [Smart Grind-by-Weight](https://github.com/jaapp/smart-grind-by-weight)
+  by jaapp — the algorithm, the hardware design, the docs, and the months
+  of iteration we benefited from.
+- [openGBW](https://github.com/jb-xyz/openGBW) and
+  [Coffee Grinder Smart Scale](https://besson.co/projects/coffee-grinder-smart-scale)
+  — the lineage that the original drew from.
+- ESPHome 2025.8+ for native `mipi_spi` CO5300 support that made this port
+  practical without writing a custom display driver.
