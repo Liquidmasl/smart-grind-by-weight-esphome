@@ -135,6 +135,18 @@ number:
       then:
         - lambda: id(grind_ctrl).set_chute_amount_g(x);
 
+  - platform: template
+    name: "Calibration Reference Weight (g)"
+    id: num_cal_reference
+    min_value: 1
+    max_value: 1000
+    step: 0.1
+    unit_of_measurement: g
+    mode: box
+    restore_value: true
+    initial_value: 100.0
+    optimistic: true
+
   # NOTE: brightness + auto-off temporarily removed while we figure out
   # whether mipi_spi's runtime brightness API is float (0..1) or uint8 (0..255).
   # See black-screen incident — re-add once verified.
@@ -211,7 +223,8 @@ button:
     name: "Start Calibration"
     on_press:
       then:
-        - lambda: id(grind_ctrl).start_calibration(100.0f);
+        - lambda: |-
+            id(grind_ctrl).start_calibration(id(num_cal_reference).state);
 
   - platform: template
     name: "Start Autotune"

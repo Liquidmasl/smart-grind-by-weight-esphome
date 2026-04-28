@@ -90,12 +90,13 @@ private:
     // HX711 gain encoding (128=1, 64=3, 32=2)
     uint8_t gain_pulses_{1};
 
-    // Preferences keys
+    // Preferences keys (bumped suffix forces a fresh NVS slot when wiring
+    // semantics change — e.g. the cal-factor sign flip).
     ESPPreferences* prefs_{nullptr};
-    static constexpr const char* PREF_KEY_CAL_FACTOR    = "cal_factor";
-    static constexpr const char* PREF_KEY_TARE_OFFSET   = "tare_offset";
-    static constexpr const char* PREF_KEY_CAL_FLAG      = "calibrated";
-    static constexpr const char* PREF_KEY_CAL_WEIGHT    = "cal_weight";
+    static constexpr const char* PREF_KEY_CAL_FACTOR    = "cal_factor_v2";
+    static constexpr const char* PREF_KEY_TARE_OFFSET   = "tare_offset_v2";
+    static constexpr const char* PREF_KEY_CAL_FLAG      = "calibrated_v2";
+    static constexpr const char* PREF_KEY_CAL_WEIGHT    = "cal_weight_v2";
 
     mutable bool cal_flag_cached_{false};
     mutable bool cal_flag_value_{false};

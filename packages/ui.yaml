@@ -708,7 +708,7 @@ lvgl:
                   align: CENTER
 
         - label:
-            text: "1. Remove all weight\n2. Press TARE\n3. Place 100g reference\n4. Press CALIBRATE"
+            text: "1. Remove all weight\n2. Press TARE\n3. Place reference weight\n4. Press CALIBRATE\n\nReference set in HA"
             text_font: montserrat_24
             text_color: 0xFFFFFF
             x: 12
@@ -745,7 +745,8 @@ lvgl:
             styles: style_btn_primary
             on_click:
               then:
-                - lambda: id(grind_ctrl).start_calibration(100.0f);
+                - lambda: |-
+                    id(grind_ctrl).start_calibration(id(num_cal_reference).state);
                 - lvgl.page.show: page_menu
             widgets:
               - label:
