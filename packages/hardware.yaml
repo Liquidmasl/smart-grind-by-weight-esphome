@@ -155,7 +155,7 @@ display:
       # CO5300 esp_lcd driver defaults to CASET start = 0x16 = 22.
       # Try sequentially: 22 → 6 → 0 → other values, watching where the
       # image lands. Adjust offset_height if there's a vertical shift too.
-      offset_width: 18
+      offset_width: 20
       offset_height: 0
     data_rate: 40MHz
     color_depth: 16
