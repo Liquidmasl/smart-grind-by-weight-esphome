@@ -36,7 +36,7 @@ public:
     // time to come up before the touchscreen driver probes it on the I2C bus.
     // Without this, touch and weight_sensor share priority and the order is
     // non-deterministic — random per-boot touch init failures.
-    float get_setup_priority() const override { return setup_priority::HARDWARE_LATE; }
+    float get_setup_priority() const override { return setup_priority::HARDWARE; }
     void dump_config() override;
 
     // ── Same public API as original WeightSensor ──────────────────────────
