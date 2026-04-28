@@ -97,7 +97,8 @@ lvgl:
                             text_color: 0xFFFFFF
                             on_short_click:
                               then:
-                                - lambda: id(grind_ctrl).start_grind_weight(9.0f, 0);
+                                - lambda: |-
+                                    id(grind_ctrl).start_grind_weight(id(num_preset_single).state, 0);
                                 - lvgl.page.show: page_grinding
                             on_long_press:
                               then:
@@ -130,7 +131,8 @@ lvgl:
                             text_color: 0xFFFFFF
                             on_short_click:
                               then:
-                                - lambda: id(grind_ctrl).start_grind_weight(18.0f, 1);
+                                - lambda: |-
+                                    id(grind_ctrl).start_grind_weight(id(num_preset_double).state, 1);
                                 - lvgl.page.show: page_grinding
                             on_long_press:
                               then:
@@ -163,7 +165,8 @@ lvgl:
                             text_color: 0xFFFFFF
                             on_short_click:
                               then:
-                                - lambda: id(grind_ctrl).start_grind_weight(21.5f, 2);
+                                - lambda: |-
+                                    id(grind_ctrl).start_grind_weight(id(num_preset_custom).state, 2);
                                 - lvgl.page.show: page_grinding
                             on_long_press:
                               then:
@@ -333,6 +336,27 @@ lvgl:
                   text: "PULSE"
                   text_font: montserrat_32
                   align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_off — full-black screen used for auto-off and the Screen switch.
+    # Tapping anywhere on this page returns to page_ready.
+    # AMOLED behaviour: a fully-black frame draws no pixel current, so this
+    # is also the lowest-power "screen off" we can do without DISPOFF.
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_off
+      bg_color: 0x000000
+      widgets:
+        - obj:
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            bg_opa: COVER
+            border_width: 0
+            pad_all: 0
+            on_short_click:
+              then:
+                - lvgl.page.show: page_ready
+                - lambda: 'id(last_touch_ms) = millis();'
 
     # ────────────────────────────────────────────────────────────────────
     # page_purge_confirm — ask user to discard stale grinds

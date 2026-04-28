@@ -147,6 +147,43 @@ number:
     initial_value: 100.0
     optimistic: true
 
+  # ── Profile preset weights (drive the on-device Single/Double/Custom tabs)
+  - platform: template
+    name: "Preset Single (g)"
+    id: num_preset_single
+    min_value: 1
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: g
+    mode: box
+    restore_value: true
+    initial_value: 9.0
+    optimistic: true
+
+  - platform: template
+    name: "Preset Double (g)"
+    id: num_preset_double
+    min_value: 1
+    max_value: 100
+    step: 0.1
+    unit_of_measurement: g
+    mode: box
+    restore_value: true
+    initial_value: 18.0
+    optimistic: true
+
+  - platform: template
+    name: "Preset Custom (g)"
+    id: num_preset_custom
+    min_value: 1
+    max_value: 1000
+    step: 0.1
+    unit_of_measurement: g
+    mode: box
+    restore_value: true
+    initial_value: 21.5
+    optimistic: true
+
   # ── Screen timeout ─────────────────────────────────────────────────────────
   # Seconds of touchscreen idle before we lvgl.pause (screen goes black).
   # 0 disables the auto-off. Touching the panel resumes it.
@@ -289,23 +326,19 @@ switch:
       then:
         - lambda: id(grind_ctrl).set_swipe_enabled(false);
 
-  # Screen on/off — uses lvgl.pause/.resume since the AMOLED has no backlight
-  # pin. Pause stops drawing and the panel goes pure black (zero pixel power).
+  # Screen on/off via page navigation. lvgl.pause alone doesn't blank an
+  # AMOLED (pixels keep displaying the last frame); navigating to an all-
+  # black page does, with no driver-side commands needed.
   - platform: template
     name: "Screen"
     id: screen_switch
     restore_mode: RESTORE_DEFAULT_ON
     optimistic: true
     turn_on_action:
-      - if:
-          condition: lvgl.is_paused
-          then:
-            - lvgl.resume:
-            - lvgl.widget.redraw:
+      - lvgl.page.show: page_ready
       - lambda: 'id(last_touch_ms) = millis();'
     turn_off_action:
-      - lvgl.pause:
-          show_snow: false
+      - lvgl.page.show: page_off
 
 # ── Interval: update UI labels every 250 ms ───────────────────────────────────
 interval:
@@ -315,6 +348,16 @@ interval:
       - lvgl.label.update:
           id: lbl_ready_weight
           text: !lambda 'return str_sprintf("%.1fg", id(grind_ctrl).get_current_weight());'
+      # Profile preset weight labels — update from HA-exposed numbers
+      - lvgl.label.update:
+          id: lbl_weight_single
+          text: !lambda 'return str_sprintf("%.1fg", id(num_preset_single).state);'
+      - lvgl.label.update:
+          id: lbl_weight_double
+          text: !lambda 'return str_sprintf("%.1fg", id(num_preset_double).state);'
+      - lvgl.label.update:
+          id: lbl_weight_custom
+          text: !lambda 'return str_sprintf("%.1fg", id(num_preset_custom).state);'
       - if:
           condition:
             lambda: 'return id(grind_ctrl).is_active();'
@@ -407,27 +450,22 @@ interval:
             - lambda: 'id(grind_ctrl).stop_grind();'
             - lvgl.page.show: page_ready
 
-  # Screen auto-off: when touchscreen has been idle for `screen_timeout`
-  # seconds, lvgl.pause to blank. Touch wakes via the on_touch handler.
-  # Suppressed during an active grind so the screen never blanks mid-shot.
+  # Screen auto-off: navigate to page_off after `screen_timeout` seconds of
+  # touchscreen idle. Tapping page_off returns to page_ready. Suppressed
+  # during an active grind so the screen never blanks mid-shot.
   - interval: 2s
     then:
       - if:
           condition:
-            and:
-              - lambda: |-
-                  if (id(screen_timeout).state <= 0) return false;
-                  if (id(grind_ctrl).is_active()) return false;
-                  uint32_t last = id(last_touch_ms);
-                  if (last == 0) { id(last_touch_ms) = millis(); return false; }
-                  uint32_t idle_ms = millis() - last;
-                  return idle_ms >= (uint32_t)id(screen_timeout).state * 1000u;
-              - lvgl.is_idle:
-                  timeout: 1s
-              - not: lvgl.is_paused
+            lambda: |-
+              if (id(screen_timeout).state <= 0) return false;
+              if (id(grind_ctrl).is_active()) return false;
+              uint32_t last = id(last_touch_ms);
+              if (last == 0) { id(last_touch_ms) = millis(); return false; }
+              uint32_t idle_ms = millis() - last;
+              return idle_ms >= (uint32_t)id(screen_timeout).state * 1000u;
           then:
-            - lvgl.pause:
-                show_snow: false
+            - lvgl.page.show: page_off
             - lambda: 'ESP_LOGI("display", "Auto-off after %.0f s idle", id(screen_timeout).state);'
 
 # ── Version / build info ──────────────────────────────────────────────────────
