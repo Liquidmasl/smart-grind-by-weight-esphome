@@ -31,7 +31,12 @@ public:
     // ── Component lifecycle ───────────────────────────────────────────────
     void setup() override;
     void loop() override;
-    float get_setup_priority() const override { return setup_priority::DATA; }
+    // Setup runs BEFORE the touchscreen (DATA=200). Its blocking wait for the
+    // HX711's first sample doubles as a deliberate delay so the FT3168 has
+    // time to come up before the touchscreen driver probes it on the I2C bus.
+    // Without this, touch and weight_sensor share priority and the order is
+    // non-deterministic — random per-boot touch init failures.
+    float get_setup_priority() const override { return setup_priority::HARDWARE_LATE; }
     void dump_config() override;
 
     // ── Same public API as original WeightSensor ──────────────────────────

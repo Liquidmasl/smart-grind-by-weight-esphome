@@ -83,8 +83,11 @@ void WeightSensorComponent::setup() {
     // Load calibration from NVS
     load_calibration();
 
-    // Wait for first sample (up to 300 ms)
-    uint32_t deadline = millis() + 300;
+    // Wait for first sample (up to 1 s). This blocking window is also used
+    // as a guaranteed startup delay for the FT3168 touch IC — the touchscreen
+    // driver, which sits at the next priority tier down, won't start probing
+    // I2C until this returns. See get_setup_priority() in the header.
+    uint32_t deadline = millis() + 1000;
     while (millis() < deadline) {
         if (hx711_is_ready()) {
             int32_t dummy;
@@ -92,6 +95,10 @@ void WeightSensorComponent::setup() {
             initialized_ = true;
             ESP_LOGI(TAG, "HX711 ready. cal_factor=%.1f tare_offset=%ld",
                      cal_factor_, (long)tare_offset_);
+            // Don't early-return — let the rest of the setup window elapse so
+            // the FT3168 still has the full delay budget before touch probes.
+            uint32_t remaining = deadline - millis();
+            if (remaining > 0) delay(remaining);
             return;
         }
         delay(10);
