@@ -243,42 +243,6 @@ button:
       then:
         - lambda: id(grind_ctrl).start_autotune();
 
-# ── Scripts ───────────────────────────────────────────────────────────────────
-script:
-  # Wraps a weight-mode grind start. Occasionally plays a brief intro instead,
-  # which simply returns to the ready screen — no grind takes place.
-  - id: maybe_start_grind_weight
-    parameters:
-      target_g: float
-      profile_id: int
-    then:
-      - if:
-          condition:
-            lambda: 'return (esphome::random_uint32() % 100) == 0;'
-          then:
-            - lvgl.page.show: page_intro
-            - delay: 5s
-            - lvgl.page.show: page_ready
-          else:
-            - lambda: 'id(grind_ctrl).start_grind_weight(target_g, profile_id);'
-            - lvgl.page.show: page_grinding
-
-  # Same wrapper for time-mode grinds.
-  - id: maybe_start_grind_time
-    parameters:
-      target_s: float
-    then:
-      - if:
-          condition:
-            lambda: 'return (esphome::random_uint32() % 100) == 0;'
-          then:
-            - lvgl.page.show: page_intro
-            - delay: 5s
-            - lvgl.page.show: page_ready
-          else:
-            - lambda: 'id(grind_ctrl).start_grind_time(target_s);'
-            - lvgl.page.show: page_grinding
-
 # ── HA-exposed switches ───────────────────────────────────────────────────────
 switch:
   - platform: template
@@ -422,19 +386,13 @@ interval:
               id(auto_grind_trigger_weight) = cw;
               return fire;
           then:
-            - lambda: 'ESP_LOGI("auto_grind", "Cup placed (delta>50g), triggering grind");'
-            - if:
-                condition:
-                  lambda: 'return id(sel_grind_mode).state == "Weight";'
-                then:
-                  - script.execute:
-                      id: maybe_start_grind_weight
-                      target_g: !lambda 'return id(num_target_weight).state;'
-                      profile_id: 0
-                else:
-                  - script.execute:
-                      id: maybe_start_grind_time
-                      target_s: !lambda 'return id(num_target_time).state;'
+            - lambda: |-
+                ESP_LOGI("auto_grind", "Cup placed (delta>50g), triggering grind");
+                if (id(sel_grind_mode).state == "Weight")
+                  id(grind_ctrl).start_grind_weight(id(num_target_weight).state);
+                else
+                  id(grind_ctrl).start_grind_time(id(num_target_time).state);
+            - lvgl.page.show: page_grinding
 
   # Return to ready after grind completed + cup removed
   - interval: 1000ms

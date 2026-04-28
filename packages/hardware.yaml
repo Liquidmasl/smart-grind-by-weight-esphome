@@ -187,7 +187,3 @@ font:
     bpp: 4
     glyphs: "0123456789.gs- "
 
-image:
-  - file: "images/cpp23_tr67.34.gif"
-    id: gif_intro
-    type: RGB565

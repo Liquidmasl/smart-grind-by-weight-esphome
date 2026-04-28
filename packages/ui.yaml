@@ -97,10 +97,8 @@ lvgl:
                             text_color: 0xFFFFFF
                             on_short_click:
                               then:
-                                - script.execute:
-                                    id: maybe_start_grind_weight
-                                    target_g: 9.0
-                                    profile_id: 0
+                                - lambda: id(grind_ctrl).start_grind_weight(9.0f, 0);
+                                - lvgl.page.show: page_grinding
                             on_long_press:
                               then:
                                 - logger.log: "TODO: edit profile single"
@@ -132,10 +130,8 @@ lvgl:
                             text_color: 0xFFFFFF
                             on_short_click:
                               then:
-                                - script.execute:
-                                    id: maybe_start_grind_weight
-                                    target_g: 18.0
-                                    profile_id: 1
+                                - lambda: id(grind_ctrl).start_grind_weight(18.0f, 1);
+                                - lvgl.page.show: page_grinding
                             on_long_press:
                               then:
                                 - logger.log: "TODO: edit profile double"
@@ -167,10 +163,8 @@ lvgl:
                             text_color: 0xFFFFFF
                             on_short_click:
                               then:
-                                - script.execute:
-                                    id: maybe_start_grind_weight
-                                    target_g: 21.5
-                                    profile_id: 2
+                                - lambda: id(grind_ctrl).start_grind_weight(21.5f, 2);
+                                - lvgl.page.show: page_grinding
                             on_long_press:
                               then:
                                 - logger.log: "TODO: edit profile custom"
@@ -339,13 +333,6 @@ lvgl:
                   text: "PULSE"
                   text_font: montserrat_32
                   align: CENTER
-
-    - id: page_intro
-      bg_color: 0x000000
-      widgets:
-        - gif:
-            src: gif_intro
-            align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
     # page_purge_confirm — ask user to discard stale grinds
