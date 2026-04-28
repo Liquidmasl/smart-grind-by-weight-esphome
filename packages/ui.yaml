@@ -1,8 +1,11 @@
 ################################################################################
 # ui.yaml — LVGL declarative UI
-# Mirrors the 8 functional screens from the PlatformIO firmware.
-# Colors: Primary 0xFF0000 (Red), Accent 0x00AAFF, Success 0x00AA00,
-#         Warning 0xCC8800, Background 0x000000, Text 0xFFFFFF
+# Mirrors the screens from the PlatformIO firmware. Theme colors copied from
+# src/config/theme.h:
+#   PRIMARY 0xFF3D00, ACCENT 0x00AAFF, SECONDARY 0xAAAAAA,
+#   TEXT_PRIMARY 0xFFFFFF, TEXT_SECONDARY 0xCCCCCC,
+#   BACKGROUND 0x000000, NEUTRAL 0x666666,
+#   SUCCESS 0x00AA00, WARNING 0xCC8800, ERROR 0xFF0000
 ################################################################################
 
 lvgl:
@@ -11,50 +14,38 @@ lvgl:
   touchscreens:
     - touchscreen_id: main_touch
 
-  # ── Color definitions ──────────────────────────────────────────────────
   color_depth: 16
+  bg_color: 0x000000
+  text_color: 0xFFFFFF
 
   style_definitions:
-    - id: style_bg
-      bg_color: 0x000000
-      text_color: 0xFFFFFF
-      border_width: 0
-
     - id: style_btn_primary
-      bg_color: 0xFF0000
+      bg_color: 0xFF3D00
       text_color: 0xFFFFFF
-      radius: 8
+      radius: 20      # THEME_CORNER_RADIUS_PX
       border_width: 0
 
     - id: style_btn_accent
       bg_color: 0x00AAFF
       text_color: 0xFFFFFF
-      radius: 8
+      radius: 20
       border_width: 0
 
     - id: style_btn_success
       bg_color: 0x00AA00
       text_color: 0xFFFFFF
-      radius: 8
+      radius: 20
       border_width: 0
 
     - id: style_btn_neutral
-      bg_color: 0x303030
+      bg_color: 0x666666
       text_color: 0xFFFFFF
-      radius: 8
+      radius: 20
       border_width: 0
 
-    - id: style_title
-      text_color: 0xFFFFFF
-      text_font: font36
-
-    - id: style_weight_display
-      text_color: 0xFFFFFF
-      text_font: font56
-
-    - id: style_label_medium
+    - id: style_label_secondary
       text_color: 0xAAAAAA
-      text_font: font24
+      text_font: montserrat_32
 
   # ── Idle timeout: dim after 5 minutes of inactivity ───────────────────
   on_idle:
@@ -66,114 +57,169 @@ lvgl:
 
   pages:
     # ────────────────────────────────────────────────────────────────────
-    # page_ready — three profile tiles (Single / Double / Custom)
+    # page_ready — vertical-swipe tabview, 4 tabs (Single/Double/Custom/MENU).
+    # Tab bar is hidden (zero-height); user navigates by vertical swipes.
+    # Each profile tab shows: profile name (32pt gray) + weight (60pt white).
+    # Tap weight → start grind. Long-press → edit profile (TODO: edit page).
+    # MENU tab shows "MAIN MENU" text; tapping it goes to page_menu.
     # ────────────────────────────────────────────────────────────────────
     - id: page_ready
       bg_color: 0x000000
       widgets:
-        # Header
-        - label:
-            id: lbl_ready_title
-            text: "SMART GRINDER"
-            text_font: font36
-            text_color: 0xFF0000
-            align: TOP_MID
-            y: 12
+        - tabview:
+            id: ready_tabview
+            position: bottom
+            size: 0   # collapse the tab bar — swipe-only navigation
+            width: 100%
+            height: 100%
+            bg_color: 0x000000
+            border_width: 0
+            tabs:
+              # ── Single ─────────────────────────────────────────────
+              - name: "Single"
+                widgets:
+                  - obj:
+                      width: 100%
+                      height: 100%
+                      bg_opa: TRANSP
+                      border_width: 0
+                      pad_all: 0
+                      layout:
+                        type: FLEX
+                        flex_flow: COLUMN
+                        flex_align_main: CENTER
+                        flex_align_cross: CENTER
+                        flex_align_track: CENTER
+                      widgets:
+                        - label:
+                            text: "SINGLE"
+                            text_font: montserrat_32
+                            text_color: 0xAAAAAA
+                        - label:
+                            id: lbl_weight_single
+                            text: "9.0g"
+                            text_font: font_weight_display
+                            text_color: 0xFFFFFF
+                            on_short_click:
+                              then:
+                                - lambda: id(grind_ctrl).start_grind_weight(9.0f, 0);
+                                - lvgl.page.show: page_grinding
+                            on_long_press:
+                              then:
+                                - logger.log: "TODO: edit profile single"
 
-        # Live weight display
+              # ── Double ─────────────────────────────────────────────
+              - name: "Double"
+                widgets:
+                  - obj:
+                      width: 100%
+                      height: 100%
+                      bg_opa: TRANSP
+                      border_width: 0
+                      pad_all: 0
+                      layout:
+                        type: FLEX
+                        flex_flow: COLUMN
+                        flex_align_main: CENTER
+                        flex_align_cross: CENTER
+                        flex_align_track: CENTER
+                      widgets:
+                        - label:
+                            text: "DOUBLE"
+                            text_font: montserrat_32
+                            text_color: 0xAAAAAA
+                        - label:
+                            id: lbl_weight_double
+                            text: "18.0g"
+                            text_font: font_weight_display
+                            text_color: 0xFFFFFF
+                            on_short_click:
+                              then:
+                                - lambda: id(grind_ctrl).start_grind_weight(18.0f, 1);
+                                - lvgl.page.show: page_grinding
+                            on_long_press:
+                              then:
+                                - logger.log: "TODO: edit profile double"
+
+              # ── Custom ─────────────────────────────────────────────
+              - name: "Custom"
+                widgets:
+                  - obj:
+                      width: 100%
+                      height: 100%
+                      bg_opa: TRANSP
+                      border_width: 0
+                      pad_all: 0
+                      layout:
+                        type: FLEX
+                        flex_flow: COLUMN
+                        flex_align_main: CENTER
+                        flex_align_cross: CENTER
+                        flex_align_track: CENTER
+                      widgets:
+                        - label:
+                            text: "CUSTOM"
+                            text_font: montserrat_32
+                            text_color: 0xAAAAAA
+                        - label:
+                            id: lbl_weight_custom
+                            text: "21.5g"
+                            text_font: font_weight_display
+                            text_color: 0xFFFFFF
+                            on_short_click:
+                              then:
+                                - lambda: id(grind_ctrl).start_grind_weight(21.5f, 2);
+                                - lvgl.page.show: page_grinding
+                            on_long_press:
+                              then:
+                                - logger.log: "TODO: edit profile custom"
+
+              # ── MENU ───────────────────────────────────────────────
+              - name: "Menu"
+                widgets:
+                  - obj:
+                      width: 100%
+                      height: 100%
+                      bg_opa: TRANSP
+                      border_width: 0
+                      pad_all: 0
+                      layout:
+                        type: FLEX
+                        flex_flow: COLUMN
+                        flex_align_main: CENTER
+                        flex_align_cross: CENTER
+                        flex_align_track: CENTER
+                      widgets:
+                        - label:
+                            text: "MAIN\nMENU"
+                            text_font: montserrat_32
+                            text_color: 0xFFFFFF
+                            text_align: CENTER
+                            on_short_click:
+                              then:
+                                - lvgl.page.show: page_menu
+
+        # Live scale weight (small, top-right corner — only visible when
+        # the cup is on and weighing). Always present overlaid on tabview.
         - label:
             id: lbl_ready_weight
             text: "0.0g"
-            text_font: font56
-            text_color: 0xFFFFFF
-            align: TOP_MID
-            y: 64
-
-        # Warning icon (hidden unless diagnostics active)
-        - label:
-            id: lbl_warning_icon
-            text: "⚠"
-            text_color: 0xCC8800
-            text_font: font36
+            text_font: montserrat_24
+            text_color: 0xCCCCCC
             align: TOP_RIGHT
             x: -8
             y: 8
+
+        # Warning icon (shown when diagnostics flag a problem)
+        - label:
+            id: lbl_warning_icon
+            text: "!"
+            text_color: 0xCC8800
+            text_font: montserrat_36
+            align: TOP_LEFT
+            x: 8
+            y: 8
             hidden: true
-
-        # Profile tile 1 — Single (9g)
-        - button:
-            id: btn_profile_single
-            x: 10
-            y: 160
-            width: 260
-            height: 72
-            styles: style_btn_neutral
-            on_click:
-              then:
-                - lambda: id(grind_ctrl).start_grind_weight(9.0f, 0);
-                - lvgl.page.show: page_grinding
-            widgets:
-              - label:
-                  text: "SINGLE  9.0g"
-                  text_font: font32
-                  text_color: 0xFFFFFF
-                  align: CENTER
-
-        # Profile tile 2 — Double (18g)
-        - button:
-            id: btn_profile_double
-            x: 10
-            y: 244
-            width: 260
-            height: 72
-            styles: style_btn_neutral
-            on_click:
-              then:
-                - lambda: id(grind_ctrl).start_grind_weight(18.0f, 1);
-                - lvgl.page.show: page_grinding
-            widgets:
-              - label:
-                  text: "DOUBLE  18.0g"
-                  text_font: font32
-                  text_color: 0xFFFFFF
-                  align: CENTER
-
-        # Profile tile 3 — Custom (21.5g)
-        - button:
-            id: btn_profile_custom
-            x: 10
-            y: 328
-            width: 260
-            height: 72
-            styles: style_btn_neutral
-            on_click:
-              then:
-                - lambda: id(grind_ctrl).start_grind_weight(21.5f, 2);
-                - lvgl.page.show: page_grinding
-            widgets:
-              - label:
-                  text: "CUSTOM  21.5g"
-                  text_font: font32
-                  text_color: 0xFFFFFF
-                  align: CENTER
-
-        # Menu button (bottom right)
-        - button:
-            id: btn_menu
-            align: BOTTOM_RIGHT
-            x: -10
-            y: -10
-            width: 80
-            height: 48
-            styles: style_btn_neutral
-            on_click:
-              then:
-                - lvgl.page.show: page_menu
-            widgets:
-              - label:
-                  text: "MENU"
-                  text_font: font24
-                  align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
     # page_grinding — live grind view + completion
@@ -185,7 +231,7 @@ lvgl:
         - label:
             id: lbl_phase
             text: "TARING"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             align: TOP_MID
             y: 8
@@ -194,7 +240,7 @@ lvgl:
         - label:
             id: lbl_grind_weight
             text: "0.0g"
-            text_font: font56
+            text_font: montserrat_48
             text_color: 0xFFFFFF
             align: TOP_MID
             y: 44
@@ -203,7 +249,7 @@ lvgl:
         - label:
             id: lbl_grind_target
             text: "/ 18.0g"
-            text_font: font32
+            text_font: montserrat_32
             text_color: 0xAAAAAA
             align: TOP_MID
             y: 116
@@ -231,7 +277,7 @@ lvgl:
         - label:
             id: lbl_flow_rate
             text: "0.0 g/s"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0x00AAFF
             align: CENTER
             y: 60
@@ -252,7 +298,7 @@ lvgl:
             widgets:
               - label:
                   text: "STOP"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
         # OK button — shown only when COMPLETED
@@ -272,7 +318,7 @@ lvgl:
             widgets:
               - label:
                   text: "OK"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
         # PULSE button — shown only when COMPLETED in time mode
@@ -290,7 +336,7 @@ lvgl:
             widgets:
               - label:
                   text: "PULSE"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
@@ -301,14 +347,14 @@ lvgl:
       widgets:
         - label:
             text: "PURGE COMPLETE"
-            text_font: font36
+            text_font: montserrat_36
             text_color: 0xFF0000
             align: TOP_MID
             y: 24
 
         - label:
             text: "Discard the purge grinds\nfrom the portafilter,\nthen press Continue."
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xFFFFFF
             align: CENTER
             y: -40
@@ -327,7 +373,7 @@ lvgl:
             widgets:
               - label:
                   text: "CONTINUE"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
         - button:
@@ -344,7 +390,7 @@ lvgl:
             widgets:
               - label:
                   text: "CANCEL"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
@@ -355,7 +401,7 @@ lvgl:
       widgets:
         - label:
             text: "MENU"
-            text_font: font36
+            text_font: montserrat_36
             text_color: 0xFF0000
             align: TOP_MID
             y: 8
@@ -374,13 +420,13 @@ lvgl:
             widgets:
               - label:
                   text: "< BACK"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         # ── Tools section ─────────────────────────────────────────────
         - label:
             text: "TOOLS"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 64
@@ -397,7 +443,7 @@ lvgl:
             widgets:
               - label:
                   text: "Scale View / Tare"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - button:
@@ -412,7 +458,7 @@ lvgl:
             widgets:
               - label:
                   text: "Calibrate Scale"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - button:
@@ -427,13 +473,13 @@ lvgl:
             widgets:
               - label:
                   text: "Tune Motor Latency"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         # ── Settings section ──────────────────────────────────────────
         - label:
             text: "SETTINGS"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 278
@@ -450,13 +496,13 @@ lvgl:
             widgets:
               - label:
                   text: "Grind Settings"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         # ── Info section ──────────────────────────────────────────────
         - label:
             text: "INFO"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 372
@@ -473,7 +519,7 @@ lvgl:
             widgets:
               - label:
                   text: "Diagnostics"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
@@ -484,7 +530,7 @@ lvgl:
       widgets:
         - label:
             text: "GRIND SETTINGS"
-            text_font: font36
+            text_font: montserrat_36
             text_color: 0xFF0000
             align: TOP_MID
             y: 8
@@ -502,13 +548,13 @@ lvgl:
             widgets:
               - label:
                   text: "< BACK"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         # Mode: Weight / Time (radio-style toggle — simplified as two buttons)
         - label:
             text: "Mode"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 64
@@ -526,7 +572,7 @@ lvgl:
             widgets:
               - label:
                   text: "WEIGHT"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - button:
@@ -542,13 +588,13 @@ lvgl:
             widgets:
               - label:
                   text: "TIME"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         # Purge mode
         - label:
             text: "Purge Mode"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 160
@@ -566,7 +612,7 @@ lvgl:
             widgets:
               - label:
                   text: "PRIME"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - button:
@@ -582,13 +628,13 @@ lvgl:
             widgets:
               - label:
                   text: "PURGE"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         # Freshness hours — numeric display with +/-
         - label:
             text: "Freshness (hours)"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 258
@@ -608,13 +654,13 @@ lvgl:
             widgets:
               - label:
                   text: "-"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
         - label:
             id: lbl_freshness
             text: "8h"
-            text_font: font32
+            text_font: montserrat_32
             text_color: 0xFFFFFF
             align: CENTER
             y: 80
@@ -634,7 +680,7 @@ lvgl:
             widgets:
               - label:
                   text: "+"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
@@ -645,7 +691,7 @@ lvgl:
       widgets:
         - label:
             text: "CALIBRATION"
-            text_font: font36
+            text_font: montserrat_36
             text_color: 0xFF0000
             align: TOP_MID
             y: 8
@@ -663,12 +709,12 @@ lvgl:
             widgets:
               - label:
                   text: "< BACK"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - label:
             text: "1. Remove all weight\n2. Press TARE\n3. Place 100g reference\n4. Press CALIBRATE"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xFFFFFF
             x: 12
             y: 70
@@ -676,7 +722,7 @@ lvgl:
         - label:
             id: lbl_cal_weight
             text: "0.0g"
-            text_font: font56
+            text_font: montserrat_48
             text_color: 0xFFFFFF
             align: CENTER
             y: 60
@@ -693,7 +739,7 @@ lvgl:
             widgets:
               - label:
                   text: "TARE"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
         - button:
@@ -709,7 +755,7 @@ lvgl:
             widgets:
               - label:
                   text: "CALIBRATE"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
@@ -720,7 +766,7 @@ lvgl:
       widgets:
         - label:
             text: "AUTO-TUNE"
-            text_font: font36
+            text_font: montserrat_36
             text_color: 0xFF0000
             align: TOP_MID
             y: 8
@@ -739,12 +785,12 @@ lvgl:
             widgets:
               - label:
                   text: "< BACK"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - label:
             text: "Measures motor response\nlatency for accurate pulse\ncorrections."
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xFFFFFF
             x: 12
             y: 70
@@ -752,7 +798,7 @@ lvgl:
         - label:
             id: lbl_autotune_status
             text: "Idle"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0x00AAFF
             align: CENTER
             y: 20
@@ -760,7 +806,7 @@ lvgl:
         - label:
             id: lbl_autotune_latency
             text: "Current: --"
-            text_font: font32
+            text_font: montserrat_32
             text_color: 0xFFFFFF
             align: CENTER
             y: 60
@@ -778,7 +824,7 @@ lvgl:
             widgets:
               - label:
                   text: "START TUNE"
-                  text_font: font32
+                  text_font: montserrat_32
                   align: CENTER
 
     # ────────────────────────────────────────────────────────────────────
@@ -789,7 +835,7 @@ lvgl:
       widgets:
         - label:
             text: "DIAGNOSTICS"
-            text_font: font36
+            text_font: montserrat_36
             text_color: 0xFF0000
             align: TOP_MID
             y: 8
@@ -807,13 +853,13 @@ lvgl:
             widgets:
               - label:
                   text: "< BACK"
-                  text_font: font24
+                  text_font: montserrat_24
                   align: CENTER
 
         - label:
             id: lbl_diag_calibrated
             text: "Calibrated: YES"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0x00AA00
             x: 12
             y: 70
@@ -821,7 +867,7 @@ lvgl:
         - label:
             id: lbl_diag_noise
             text: "Noise: OK"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0x00AA00
             x: 12
             y: 106
@@ -829,7 +875,7 @@ lvgl:
         - label:
             id: lbl_diag_latency
             text: "Motor latency: 50.0ms"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xFFFFFF
             x: 12
             y: 142
@@ -837,7 +883,7 @@ lvgl:
         - label:
             id: lbl_diag_mech
             text: "Mech. events: 0"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xFFFFFF
             x: 12
             y: 178
@@ -845,7 +891,7 @@ lvgl:
         - label:
             id: lbl_diag_last_grind
             text: "Last error: n/a"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xFFFFFF
             x: 12
             y: 214
@@ -853,7 +899,7 @@ lvgl:
         - label:
             id: lbl_diag_phase
             text: "Phase: IDLE"
-            text_font: font24
+            text_font: montserrat_24
             text_color: 0xAAAAAA
             x: 12
             y: 250
