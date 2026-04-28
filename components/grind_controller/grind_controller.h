@@ -2,6 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/gpio.h"
+#include "esphome/core/hal.h"
 #include "esphome/core/preferences.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
@@ -98,6 +99,17 @@ public:
     float get_current_weight() const;
     float get_target_weight() const { return target_weight_; }
     float get_motor_latency() const { return motor_latency_ms_; }
+    float get_freshness_hours() const { return freshness_hours_; }
+    float get_chute_amount_g() const { return chute_amount_g_; }
+    int   get_chute_mode() const     { return (int)chute_mode_; }
+    int   get_grind_mode() const     { return (int)mode_; }
+    bool  get_swipe_enabled() const  { return swipe_enabled_; }
+    int   get_pulse_attempts() const { return pulse_attempts_; }
+    int   get_mech_anomaly_count() const { return mech_anomaly_count_; }
+    float get_final_weight() const   { return final_weight_; }
+    const char* get_last_error_msg() const { return last_error_msg_; }
+    uint8_t get_current_profile_id() const { return current_profile_id_; }
+    uint32_t get_grind_duration_ms() const { return start_time_ ? (uint32_t)(millis() - start_time_) : 0; }
 
     // ── Configurable parameters from HA ──────────────────────────────────
     void set_target_weight(float g)        { target_weight_ = g; }
@@ -117,10 +129,6 @@ public:
     bool can_pulse() const {
         return mode_ == GrindMode::TIME && phase_ == GrindPhase::COMPLETED;
     }
-
-    // ── HA event firing ───────────────────────────────────────────────────
-    void fire_grind_started_event();
-    void fire_grind_completed_event();
 
 private:
     // ── Hardware references ───────────────────────────────────────────────
@@ -254,7 +262,9 @@ private:
     float  at_current_ms_{0};
     float  at_step_ms_{0};
     int    at_iter_{0};
+    int    at_total_iter_{0};
     int    at_success_{0};
+    float  at_pre_weight_{0.0f};
     unsigned long at_phase_start_{0};
 
     static const char* phase_name(GrindPhase p);

@@ -14,10 +14,15 @@ esp32:
     version: recommended
   flash_size: 16MB
 
+# Waveshare 1.64" AMOLED module ships PSRAM; LVGL framebuffer needs it.
+psram:
+  mode: octal
+  speed: 80MHz
+
 # ── Custom components ──────────────────────────────────────────────────────────
 external_components:
   - source: components
-    components: [grind_controller, weight_sensor, sh8501_amoled]
+    components: [grind_controller, weight_sensor]
 
 # ── Package includes ───────────────────────────────────────────────────────────
 packages:

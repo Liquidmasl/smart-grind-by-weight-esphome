@@ -1,7 +1,7 @@
 #include "grind_controller.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
-#include "esphome/core/application.h"
+#include "esphome/core/helpers.h"
 #include <cmath>
 #include <algorithm>
 #include <driver/gpio.h>
@@ -31,6 +31,11 @@ void GrindController::setup() {
 }
 
 void GrindController::loop() {
+    // Autotune runs independently of the grind state machine.
+    if (autotune_running_) {
+        autotune_update();
+    }
+
     if (!is_active()) {
         // In IDLE — publish weight + calibration status continuously
         static uint32_t last_idle_pub = 0;
@@ -41,6 +46,10 @@ void GrindController::loop() {
                 s_current_weight_->publish_state(weight_sensor_->get_display_weight());
             if (s_calibrated_ && weight_sensor_)
                 s_calibrated_->publish_state(weight_sensor_->is_calibrated());
+            if (s_motor_latency_)
+                s_motor_latency_->publish_state(motor_latency_ms_);
+            if (s_mechanical_)
+                s_mechanical_->publish_state((float)mech_anomaly_count_);
         }
         return;
     }
@@ -325,10 +334,9 @@ void GrindController::switch_phase(GrindPhase new_phase) {
         motor_stop();
     }
     if (new_phase == GrindPhase::COMPLETED) {
-        purged_since_boot_    = true;
+        purged_since_boot_     = true;
         last_grind_runtime_ms_ = (uint64_t)millis();
         save_prefs();
-        fire_grind_completed_event();
         if (s_last_error_ && mode_ == GrindMode::WEIGHT)
             s_last_error_->publish_state(final_weight_ - target_weight_);
         if (s_last_duration_)
@@ -340,6 +348,7 @@ void GrindController::switch_phase(GrindPhase new_phase) {
         if (s_mechanical_)
             s_mechanical_->publish_state((float)mech_anomaly_count_);
     }
+    // Phase name publish drives YAML automations (HA event fire, page transitions)
     if (s_phase_name_) s_phase_name_->publish_state(phase_name(new_phase));
 }
 
@@ -654,43 +663,25 @@ void GrindController::save_prefs() {
 }
 
 // ============================================================================
-// HA event firing
+// HA events: fired from automations.yaml on phase_name text_sensor transitions.
 // ============================================================================
 
-void GrindController::fire_grind_started_event() {
-    App.get_api_server()->send_homeassistant_service_call(
-        {"grind_started",
-         {{"profile_id", std::to_string(current_profile_id_)},
-          {"target_g",   std::to_string(target_weight_)},
-          {"mode",       mode_ == GrindMode::TIME ? "time" : "weight"}}});
-}
-
-void GrindController::fire_grind_completed_event() {
-    float error_g = (mode_ == GrindMode::WEIGHT) ? (final_weight_ - target_weight_) : 0.0f;
-    App.get_api_server()->send_homeassistant_service_call(
-        {"grind_completed",
-         {{"profile_id",     std::to_string(current_profile_id_)},
-          {"target_g",       std::to_string(target_weight_)},
-          {"final_g",        std::to_string(final_weight_)},
-          {"error_g",        std::to_string(error_g)},
-          {"pulse_count",    std::to_string(pulse_attempts_)},
-          {"duration_ms",    std::to_string(millis() - start_time_)},
-          {"mode",           mode_ == GrindMode::TIME ? "time" : "weight"}}});
-}
-
 // ============================================================================
-// Autotune (simplified binary search)
+// Autotune (simplified — single-pulse latency probe)
 // ============================================================================
 
 void GrindController::start_autotune() {
-    if (!weight_sensor_ || autotune_running_) return;
-    autotune_running_  = true;
-    at_current_ms_     = GRIND_AUTOTUNE_LATENCY_MAX_MS;
-    at_step_ms_        = (GRIND_AUTOTUNE_LATENCY_MAX_MS - GRIND_AUTOTUNE_LATENCY_MIN_MS) / 2.0f;
-    at_iter_           = 0;
-    at_success_        = 0;
-    at_sub_            = AutoTuneSubPhase::IDLE;
-    ESP_LOGI(TAG, "AutoTune started");
+    if (!weight_sensor_ || autotune_running_ || is_active()) return;
+    autotune_running_ = true;
+    at_current_ms_    = (GRIND_AUTOTUNE_LATENCY_MIN_MS + GRIND_AUTOTUNE_LATENCY_MAX_MS) / 2.0f;
+    at_step_ms_       = (GRIND_AUTOTUNE_LATENCY_MAX_MS - GRIND_AUTOTUNE_LATENCY_MIN_MS) / 4.0f;
+    at_iter_          = 0;
+    at_total_iter_    = 0;
+    at_success_       = 0;
+    at_pre_weight_    = 0.0f;
+    at_sub_           = AutoTuneSubPhase::IDLE;
+    weight_sensor_->start_nonblocking_tare();
+    ESP_LOGI(TAG, "AutoTune started, midpoint=%.1fms step=%.1fms", at_current_ms_, at_step_ms_);
 }
 
 void GrindController::cancel_autotune() {
@@ -700,54 +691,63 @@ void GrindController::cancel_autotune() {
 }
 
 void GrindController::autotune_update() {
-    if (!autotune_running_) return;
+    if (!autotune_running_ || !weight_sensor_) return;
     unsigned long now = millis();
+
     switch (at_sub_) {
-        case AutoTuneSubPhase::IDLE:
+        case AutoTuneSubPhase::IDLE: {
+            // Snapshot pre-pulse weight, then fire the test pulse
+            at_pre_weight_ = weight_sensor_->get_weight_high_latency();
             motor_start_pulse((uint32_t)at_current_ms_);
             at_phase_start_ = now;
             at_sub_ = AutoTuneSubPhase::PULSE;
             break;
+        }
         case AutoTuneSubPhase::PULSE:
             if (motor_pulse_complete()) {
                 at_phase_start_ = now;
                 at_sub_ = AutoTuneSubPhase::SETTLING;
             }
             break;
-        case AutoTuneSubPhase::SETTLING:
-            if (now - at_phase_start_ >= GRIND_AUTOTUNE_COLLECTION_DELAY_MS) {
-                float delta = weight_sensor_->get_weight_high_latency();
-                bool success = (delta >= GRIND_AUTOTUNE_WEIGHT_THRESHOLD_G);
-                if (success) at_success_++;
-                at_iter_++;
-                if (at_iter_ >= GRIND_AUTOTUNE_VERIFICATION_PULSES) {
-                    float rate = (float)at_success_ / at_iter_;
-                    if (rate >= GRIND_AUTOTUNE_SUCCESS_RATE) {
-                        motor_latency_ms_ = at_current_ms_;
-                        save_prefs();
-                        if (s_motor_latency_) s_motor_latency_->publish_state(motor_latency_ms_);
-                        ESP_LOGI(TAG, "AutoTune complete: latency=%.1fms", motor_latency_ms_);
-                        autotune_running_ = false;
-                        return;
-                    }
-                    // Adjust and retry
-                    if (rate < 0.5f) at_current_ms_ -= at_step_ms_;
-                    else             at_current_ms_ += at_step_ms_;
-                    at_current_ms_ = std::max((float)GRIND_AUTOTUNE_LATENCY_MIN_MS,
-                                     std::min((float)GRIND_AUTOTUNE_LATENCY_MAX_MS, at_current_ms_));
-                    at_step_ms_ /= 2.0f;
-                    at_iter_ = at_success_ = 0;
-                }
-                weight_sensor_->start_nonblocking_tare();
-                at_phase_start_ = now;
-                at_sub_ = AutoTuneSubPhase::IDLE;
+        case AutoTuneSubPhase::SETTLING: {
+            if (now - at_phase_start_ < GRIND_AUTOTUNE_COLLECTION_DELAY_MS) break;
+
+            // Verification iteration complete — measure delta, decide
+            float post_weight = weight_sensor_->get_weight_high_latency();
+            float delta = post_weight - at_pre_weight_;
+            if (delta >= GRIND_AUTOTUNE_WEIGHT_THRESHOLD_G) at_success_++;
+            at_iter_++;
+            at_total_iter_++;
+
+            if (at_total_iter_ >= GRIND_AUTOTUNE_MAX_ITERATIONS) {
+                ESP_LOGW(TAG, "AutoTune max iterations reached at latency=%.1fms", at_current_ms_);
+                autotune_running_ = false;
+                return;
             }
+
+            if (at_iter_ >= GRIND_AUTOTUNE_VERIFICATION_PULSES) {
+                float rate = (float)at_success_ / (float)at_iter_;
+                if (rate >= GRIND_AUTOTUNE_SUCCESS_RATE) {
+                    motor_latency_ms_ = at_current_ms_;
+                    save_prefs();
+                    if (s_motor_latency_) s_motor_latency_->publish_state(motor_latency_ms_);
+                    ESP_LOGI(TAG, "AutoTune complete: latency=%.1fms", motor_latency_ms_);
+                    autotune_running_ = false;
+                    return;
+                }
+                // Binary search step: low success → longer pulse, high → shorter
+                if (rate < 0.5f) at_current_ms_ += at_step_ms_;
+                else             at_current_ms_ -= at_step_ms_;
+                at_current_ms_ = std::max((float)GRIND_AUTOTUNE_LATENCY_MIN_MS,
+                                 std::min((float)GRIND_AUTOTUNE_LATENCY_MAX_MS, at_current_ms_));
+                at_step_ms_ = std::max(GRIND_AUTOTUNE_TARGET_ACCURACY_MS, at_step_ms_ / 2.0f);
+                at_iter_    = 0;
+                at_success_ = 0;
+            }
+            at_sub_ = AutoTuneSubPhase::IDLE;
             break;
+        }
         default: break;
-    }
-    if (++at_iter_ > GRIND_AUTOTUNE_MAX_ITERATIONS) {
-        ESP_LOGW(TAG, "AutoTune max iterations reached");
-        autotune_running_ = false;
     }
 }
 
@@ -770,8 +770,8 @@ const char* GrindController::phase_name(GrindPhase p) {
         case GrindPhase::PULSE_EXECUTE:         return "PULSE_EXECUTE";
         case GrindPhase::PULSE_SETTLING:        return "PULSE_SETTLING";
         case GrindPhase::FINAL_SETTLING:        return "FINAL_SETTLING";
-        case GrindPhase::TIME_GRINDING:         return "TIME";
-        case GrindPhase::TIME_ADDITIONAL_PULSE: return "PULSE";
+        case GrindPhase::TIME_GRINDING:         return "TIME_GRINDING";
+        case GrindPhase::TIME_ADDITIONAL_PULSE: return "TIME_ADDITIONAL_PULSE";
         case GrindPhase::COMPLETED:             return "COMPLETED";
         case GrindPhase::TIMEOUT:               return "TIMEOUT";
         default:                                return "UNKNOWN";

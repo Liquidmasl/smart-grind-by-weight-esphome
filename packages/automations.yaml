@@ -29,11 +29,6 @@ globals:
     restore_value: false
     initial_value: "0.0"
 
-  - id: grind_phase_prev
-    type: std::string
-    restore_value: false
-    initial_value: '"IDLE"'
-
 # ── HA-exposed numbers (writable from dashboard / automations) ────────────────
 number:
   - platform: template
@@ -249,68 +244,101 @@ switch:
 interval:
   - interval: 250ms
     then:
-      - lambda: |-
-          // Ready page — live weight
-          auto w_str = str_sprintf("%.1fg", id(grind_ctrl).get_current_weight());
-          id(lbl_ready_weight).set_text(w_str.c_str());
+      # Live label/arc updates use lvgl actions so they take the LVGL lock.
+      - lvgl.label.update:
+          id: lbl_ready_weight
+          text: !lambda 'return str_sprintf("%.1fg", id(grind_ctrl).get_current_weight());'
+      - if:
+          condition:
+            lambda: 'return id(grind_ctrl).is_active();'
+          then:
+            - lvgl.label.update:
+                id: lbl_grind_weight
+                text: !lambda 'return str_sprintf("%.1fg", id(grind_ctrl).get_current_weight());'
+            - lvgl.label.update:
+                id: lbl_phase
+                text: !lambda 'return std::string(id(grind_ctrl).get_phase_name());'
+            - lvgl.arc.update:
+                id: arc_progress
+                value: !lambda 'return id(grind_ctrl).get_progress_percent();'
+            # Button visibility on completion (split-button OK + PULSE)
+            - if:
+                condition:
+                  lambda: 'return id(grind_ctrl).is_completed();'
+                then:
+                  - lvgl.widget.show: btn_grind_ok
+                  - lvgl.widget.hide: btn_grind_stop
+                  - if:
+                      condition:
+                        lambda: 'return id(grind_ctrl).can_pulse();'
+                      then:
+                        - lvgl.widget.show: btn_grind_pulse
+                      else:
+                        - lvgl.widget.hide: btn_grind_pulse
+                else:
+                  - lvgl.widget.hide: btn_grind_ok
+                  - lvgl.widget.hide: btn_grind_pulse
+                  - lvgl.widget.show: btn_grind_stop
+      # Diagnostics live values
+      - lvgl.label.update:
+          id: lbl_diag_latency
+          text: !lambda 'return str_sprintf("Motor latency: %.1fms", id(grind_ctrl).get_motor_latency());'
+      - lvgl.label.update:
+          id: lbl_diag_mech
+          text: !lambda 'return str_sprintf("Mech. events: %d", id(grind_ctrl).get_mech_anomaly_count());'
+      - lvgl.label.update:
+          id: lbl_freshness
+          text: !lambda 'return str_sprintf("%.0fh", id(grind_ctrl).get_freshness_hours());'
+      - lvgl.label.update:
+          id: lbl_cal_weight
+          text: !lambda 'return str_sprintf("%.1fg", id(grind_ctrl).get_current_weight());'
+      - lvgl.label.update:
+          id: lbl_autotune_latency
+          text: !lambda 'return str_sprintf("Current: %.1fms", id(grind_ctrl).get_motor_latency());'
 
-          // Grinding page — live weight + phase + progress
-          if (id(grind_ctrl).is_active()) {
-            auto gw_str = str_sprintf("%.1fg", id(grind_ctrl).get_current_weight());
-            id(lbl_grind_weight).set_text(gw_str.c_str());
-            id(lbl_phase).set_text(id(grind_ctrl).get_phase_name());
-            id(arc_progress).set_value(id(grind_ctrl).get_progress_percent());
-
-            // Show/hide OK and PULSE buttons based on state
-            bool completed = id(grind_ctrl).is_completed();
-            id(btn_grind_ok).set_hidden(!completed);
-            id(btn_grind_pulse).set_hidden(!(completed && id(grind_ctrl).can_pulse()));
-            id(btn_grind_stop).set_hidden(completed);
-
-            // Auto-navigate to purge confirm page
-            if (id(grind_ctrl).is_purge_confirm()) {
-              lv_scr_load(id(page_purge_confirm));
-            }
-          }
-
-          // Diagnostics page
-          auto lat_str = str_sprintf("Motor latency: %.1fms", id(grind_ctrl).get_motor_latency());
-          id(lbl_diag_latency).set_text(lat_str.c_str());
-
-  # Auto-grind on cup placement (weight delta > 50g within 5s)
+  # Auto-grind on cup placement (weight delta > 50g within rearm window)
   - interval: 500ms
     then:
-      - lambda: |-
-          if (!id(auto_grind_enabled) || id(grind_ctrl).is_active()) return;
-          float cw = id(grind_ctrl).get_current_weight();
-          uint32_t now = millis();
-          // Detect rising edge (cup placed)
-          if (cw > id(auto_grind_trigger_weight) + 50.0f) {
-            uint32_t last = id(auto_grind_last_trigger_ms);
-            if (last == 0 || (now - last) > 1500) {
-              id(auto_grind_last_trigger_ms) = now;
-              ESP_LOGI("auto_grind", "Cup placed (delta>50g), triggering grind");
-              if (id(sel_grind_mode).state == "Weight")
-                id(grind_ctrl).start_grind_weight(id(num_target_weight).state);
-              else
-                id(grind_ctrl).start_grind_time(id(num_target_time).state);
-              lv_scr_load(id(page_grinding));
-            }
-          }
-          id(auto_grind_trigger_weight) = cw;
+      - if:
+          condition:
+            lambda: |-
+              if (!id(auto_grind_enabled) || id(grind_ctrl).is_active()) {
+                id(auto_grind_trigger_weight) = id(grind_ctrl).get_current_weight();
+                return false;
+              }
+              float cw = id(grind_ctrl).get_current_weight();
+              uint32_t now = millis();
+              bool fire = false;
+              if (cw > id(auto_grind_trigger_weight) + 50.0f) {
+                uint32_t last = id(auto_grind_last_trigger_ms);
+                if (last == 0 || (now - last) > 1500) {
+                  id(auto_grind_last_trigger_ms) = now;
+                  fire = true;
+                }
+              }
+              id(auto_grind_trigger_weight) = cw;
+              return fire;
+          then:
+            - lambda: |-
+                ESP_LOGI("auto_grind", "Cup placed (delta>50g), triggering grind");
+                if (id(sel_grind_mode).state == "Weight")
+                  id(grind_ctrl).start_grind_weight(id(num_target_weight).state);
+                else
+                  id(grind_ctrl).start_grind_time(id(num_target_time).state);
+            - lvgl.page.show: page_grinding
 
   # Return to ready after grind completed + cup removed
   - interval: 1000ms
     then:
-      - lambda: |-
-          if (!id(return_on_removal_enabled)) return;
-          if (!id(grind_ctrl).is_completed()) return;
-          // If weight drops back below a threshold after completion, navigate home
-          float cw = id(grind_ctrl).get_current_weight();
-          if (cw < 5.0f) {
-            id(grind_ctrl).stop_grind();
-            lv_scr_load(id(page_ready));
-          }
+      - if:
+          condition:
+            lambda: |-
+              if (!id(return_on_removal_enabled)) return false;
+              if (!id(grind_ctrl).is_completed()) return false;
+              return id(grind_ctrl).get_current_weight() < 5.0f;
+          then:
+            - lambda: 'id(grind_ctrl).stop_grind();'
+            - lvgl.page.show: page_ready
 
 # ── Version / build info ──────────────────────────────────────────────────────
 text_sensor:

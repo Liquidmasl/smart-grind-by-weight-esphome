@@ -42,6 +42,42 @@ grind_controller:
   phase_name_sensor:
     name: "Grind Phase"
     icon: mdi:state-machine
+    on_value:
+      # Navigate to the purge-confirm page when the controller pauses for purge
+      - if:
+          condition:
+            lambda: 'return x == "PURGE_CONFIRM";'
+          then:
+            - lvgl.page.show: page_purge_confirm
+      # Fire HA events at start-of-grind and completion for analytics
+      - if:
+          condition:
+            lambda: 'return x == "INITIALIZING";'
+          then:
+            - homeassistant.event:
+                event: esphome.grind_started
+                data_template:
+                  profile_id: !lambda 'return std::to_string(id(grind_ctrl).get_current_profile_id());'
+                  target_g: !lambda 'return std::to_string(id(grind_ctrl).get_target_weight());'
+                  mode: !lambda 'return id(grind_ctrl).get_grind_mode() == 1 ? "time" : "weight";'
+      - if:
+          condition:
+            lambda: 'return x == "COMPLETED";'
+          then:
+            - homeassistant.event:
+                event: esphome.grind_completed
+                data_template:
+                  profile_id: !lambda 'return std::to_string(id(grind_ctrl).get_current_profile_id());'
+                  target_g: !lambda 'return std::to_string(id(grind_ctrl).get_target_weight());'
+                  final_g: !lambda 'return std::to_string(id(grind_ctrl).get_final_weight());'
+                  error_g: !lambda |-
+                    float e = id(grind_ctrl).get_grind_mode() == 0
+                              ? id(grind_ctrl).get_final_weight() - id(grind_ctrl).get_target_weight()
+                              : 0.0f;
+                    return std::to_string(e);
+                  pulse_count: !lambda 'return std::to_string(id(grind_ctrl).get_pulse_attempts());'
+                  duration_ms: !lambda 'return std::to_string(id(grind_ctrl).get_grind_duration_ms());'
+                  mode: !lambda 'return id(grind_ctrl).get_grind_mode() == 1 ? "time" : "weight";'
   progress_sensor:
     name: "Grind Progress"
     unit_of_measurement: "%"
@@ -72,31 +108,52 @@ grind_controller:
     unit_of_measurement: ms
     accuracy_decimals: 1
 
-# ── Touchscreen ───────────────────────────────────────────────────────────────
+# ── Touchscreen — FT3168 (FT5x06 register-compatible) ────────────────────────
+# The Waveshare 1.64" AMOLED carries an FT3168 capacitive touch IC. It speaks
+# the FT5x06 register set, so ESPHome's built-in `ft5x06` platform drives it
+# directly at I2C 0x38. Gesture (swipe) detection is handled in LVGL.
 touchscreen:
-  - platform: ft63x6
+  - platform: ft5x06
     id: main_touch
     i2c_id: i2c_touch
     address: 0x38
-    interrupt_pin: GPIONC   # FT3168 INT pin — wire if available, else polling
     on_touch:
       - lambda: |-
           ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
 
-# ── Display — SH8501 / CO5300 QSPI AMOLED ────────────────────────────────────
+# ── Display — Waveshare 1.64" AMOLED (CO5300 via QSPI) ───────────────────────
+# Uses ESPHome's built-in mipi_spi platform with the bundled CO5300 init
+# sequence (added in ESPHome 2025.8). The platform's CO5300 defaults are tuned
+# for the 466x466 sibling panel; the 1.64" 280x456 module needs the dimensions
+# override below plus offset_width/offset_height tuning if the image lands
+# off-center on first boot (typical green-line / shift symptom).
+spi:
+  - id: qspi_display_bus
+    type: quad
+    clk_pin: GPIO10
+    data_pins: [GPIO11, GPIO12, GPIO13, GPIO14]
+
 display:
-  - platform: sh8501_amoled
+  - platform: mipi_spi
     id: main_display
+    model: CO5300
+    spi_id: qspi_display_bus
+    bus_mode: quad
     cs_pin: GPIO9
-    sck_pin: GPIO10
-    d0_pin: GPIO11
-    d1_pin: GPIO12
-    d2_pin: GPIO13
-    d3_pin: GPIO14
     reset_pin: GPIO21
-    width: 280
-    height: 456
-    update_interval: never    # LVGL drives refresh
+    dimensions:
+      width: 280
+      height: 456
+      # Offsets: tune on real hardware if the image is shifted or has a green
+      # line. The 1.43" sibling needs offset_width: 6; the 1.64" likely needs
+      # its own value — check the Waveshare LCD_Init.c or iterate.
+      offset_width: 0
+      offset_height: 0
+    data_rate: 40MHz
+    color_depth: 16
+    invert_colors: true
+    update_interval: never  # LVGL drives refresh
+    auto_clear_enabled: false
 
 # ── LVGL fonts ────────────────────────────────────────────────────────────────
 font:

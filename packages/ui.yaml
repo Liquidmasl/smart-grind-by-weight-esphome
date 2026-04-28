@@ -215,18 +215,14 @@ lvgl:
             width: 200
             height: 200
             arc_color: 0xFF0000
+            arc_width: 12
             bg_arc_color: 0x303030
+            bg_arc_width: 12
             start_angle: 135
             end_angle: 405
             value: 0
             min_value: 0
             max_value: 100
-            indicator:
-              arc_color: 0xFF0000
-              arc_width: 12
-            bg_arc:
-              arc_color: 0x303030
-              arc_width: 12
 
         # Flow rate
         - label:
@@ -603,8 +599,8 @@ lvgl:
             styles: style_btn_neutral
             on_click:
               then:
-                - lambda: |
-                    float h = id(grind_ctrl).freshness_hours_;
+                - lambda: |-
+                    float h = id(grind_ctrl).get_freshness_hours();
                     if (h > 1.0f) id(grind_ctrl).set_freshness_hours(h - 1.0f);
             widgets:
               - label:
@@ -629,8 +625,8 @@ lvgl:
             styles: style_btn_neutral
             on_click:
               then:
-                - lambda: |
-                    float h = id(grind_ctrl).freshness_hours_;
+                - lambda: |-
+                    float h = id(grind_ctrl).get_freshness_hours();
                     id(grind_ctrl).set_freshness_hours(h + 1.0f);
             widgets:
               - label:
@@ -859,19 +855,7 @@ lvgl:
             x: 12
             y: 250
 
-# ── Swipe gestures (when enabled via settings) ────────────────────────────────
-  on_swipe:
-    direction: LEFT
-    then:
-      - if:
-          condition:
-            - lambda: return id(grind_ctrl).swipe_enabled_;
-          then:
-            - logger.log: "Swipe left detected"
-    direction: RIGHT
-    then:
-      - if:
-          condition:
-            - lambda: return id(grind_ctrl).swipe_enabled_;
-          then:
-            - logger.log: "Swipe right detected"
+# Swipe gesture support: not yet wired. The original firmware drives mode
+# switching via vertical swipes; in ESPHome this would attach to the
+# touchscreen as a custom gesture detector or a per-page lvgl on_swipe.
+# Skipped for now; controlled by the `swipe_enabled` preference once added.
