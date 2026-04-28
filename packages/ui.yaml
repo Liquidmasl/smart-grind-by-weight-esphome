@@ -1,0 +1,877 @@
+################################################################################
+# ui.yaml — LVGL declarative UI
+# Mirrors the 8 functional screens from the PlatformIO firmware.
+# Colors: Primary 0xFF0000 (Red), Accent 0x00AAFF, Success 0x00AA00,
+#         Warning 0xCC8800, Background 0x000000, Text 0xFFFFFF
+################################################################################
+
+lvgl:
+  display_id: main_display
+  touchscreens:
+    - touchscreen_id: main_touch
+
+  # ── Color definitions ──────────────────────────────────────────────────
+  color_depth: 16
+
+  style_definitions:
+    - id: style_bg
+      bg_color: 0x000000
+      text_color: 0xFFFFFF
+      border_width: 0
+
+    - id: style_btn_primary
+      bg_color: 0xFF0000
+      text_color: 0xFFFFFF
+      radius: 8
+      border_width: 0
+
+    - id: style_btn_accent
+      bg_color: 0x00AAFF
+      text_color: 0xFFFFFF
+      radius: 8
+      border_width: 0
+
+    - id: style_btn_success
+      bg_color: 0x00AA00
+      text_color: 0xFFFFFF
+      radius: 8
+      border_width: 0
+
+    - id: style_btn_neutral
+      bg_color: 0x303030
+      text_color: 0xFFFFFF
+      radius: 8
+      border_width: 0
+
+    - id: style_title
+      text_color: 0xFFFFFF
+      text_font: font36
+
+    - id: style_weight_display
+      text_color: 0xFFFFFF
+      text_font: font56
+
+    - id: style_label_medium
+      text_color: 0xAAAAAA
+      text_font: font24
+
+  # ── Idle timeout: dim after 5 minutes of inactivity ───────────────────
+  on_idle:
+    timeout: 300s
+    then:
+      - logger.log: "Screen auto-dim"
+      # The SH8501 does not have a hardware backlight PWM in this config.
+      # Future: use a GPIO-connected MOSFET or LEDC channel for brightness.
+
+  pages:
+    # ────────────────────────────────────────────────────────────────────
+    # page_ready — three profile tiles (Single / Double / Custom)
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_ready
+      bg_color: 0x000000
+      widgets:
+        # Header
+        - label:
+            id: lbl_ready_title
+            text: "SMART GRINDER"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 12
+
+        # Live weight display
+        - label:
+            id: lbl_ready_weight
+            text: "0.0g"
+            text_font: font56
+            text_color: 0xFFFFFF
+            align: TOP_MID
+            y: 64
+
+        # Warning icon (hidden unless diagnostics active)
+        - label:
+            id: lbl_warning_icon
+            text: "⚠"
+            text_color: 0xCC8800
+            text_font: font36
+            align: TOP_RIGHT
+            x: -8
+            y: 8
+            hidden: true
+
+        # Profile tile 1 — Single (9g)
+        - button:
+            id: btn_profile_single
+            x: 10
+            y: 160
+            width: 260
+            height: 72
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).start_grind_weight(9.0f, 0);
+                - lvgl.page.show: page_grinding
+            widgets:
+              - label:
+                  text: "SINGLE  9.0g"
+                  text_font: font32
+                  text_color: 0xFFFFFF
+                  align: CENTER
+
+        # Profile tile 2 — Double (18g)
+        - button:
+            id: btn_profile_double
+            x: 10
+            y: 244
+            width: 260
+            height: 72
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).start_grind_weight(18.0f, 1);
+                - lvgl.page.show: page_grinding
+            widgets:
+              - label:
+                  text: "DOUBLE  18.0g"
+                  text_font: font32
+                  text_color: 0xFFFFFF
+                  align: CENTER
+
+        # Profile tile 3 — Custom (21.5g)
+        - button:
+            id: btn_profile_custom
+            x: 10
+            y: 328
+            width: 260
+            height: 72
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).start_grind_weight(21.5f, 2);
+                - lvgl.page.show: page_grinding
+            widgets:
+              - label:
+                  text: "CUSTOM  21.5g"
+                  text_font: font32
+                  text_color: 0xFFFFFF
+                  align: CENTER
+
+        # Menu button (bottom right)
+        - button:
+            id: btn_menu
+            align: BOTTOM_RIGHT
+            x: -10
+            y: -10
+            width: 80
+            height: 48
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_menu
+            widgets:
+              - label:
+                  text: "MENU"
+                  text_font: font24
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_grinding — live grind view + completion
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_grinding
+      bg_color: 0x000000
+      widgets:
+        # Phase label
+        - label:
+            id: lbl_phase
+            text: "TARING"
+            text_font: font24
+            text_color: 0xAAAAAA
+            align: TOP_MID
+            y: 8
+
+        # Live weight — large
+        - label:
+            id: lbl_grind_weight
+            text: "0.0g"
+            text_font: font56
+            text_color: 0xFFFFFF
+            align: TOP_MID
+            y: 44
+
+        # Target weight
+        - label:
+            id: lbl_grind_target
+            text: "/ 18.0g"
+            text_font: font32
+            text_color: 0xAAAAAA
+            align: TOP_MID
+            y: 116
+
+        # Progress arc
+        - arc:
+            id: arc_progress
+            x: 40
+            y: 160
+            width: 200
+            height: 200
+            arc_color: 0xFF0000
+            bg_arc_color: 0x303030
+            start_angle: 135
+            end_angle: 405
+            value: 0
+            min_value: 0
+            max_value: 100
+            indicator:
+              arc_color: 0xFF0000
+              arc_width: 12
+            bg_arc:
+              arc_color: 0x303030
+              arc_width: 12
+
+        # Flow rate
+        - label:
+            id: lbl_flow_rate
+            text: "0.0 g/s"
+            text_font: font24
+            text_color: 0x00AAFF
+            align: CENTER
+            y: 60
+
+        # Stop button — always visible during grind
+        - button:
+            id: btn_grind_stop
+            align: BOTTOM_LEFT
+            x: 10
+            y: -10
+            width: 120
+            height: 56
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).stop_grind();
+                - lvgl.page.show: page_ready
+            widgets:
+              - label:
+                  text: "STOP"
+                  text_font: font32
+                  align: CENTER
+
+        # OK button — shown only when COMPLETED
+        - button:
+            id: btn_grind_ok
+            hidden: true
+            align: BOTTOM_RIGHT
+            x: -10
+            y: -10
+            width: 120
+            height: 56
+            styles: style_btn_success
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).stop_grind();
+                - lvgl.page.show: page_ready
+            widgets:
+              - label:
+                  text: "OK"
+                  text_font: font32
+                  align: CENTER
+
+        # PULSE button — shown only when COMPLETED in time mode
+        - button:
+            id: btn_grind_pulse
+            hidden: true
+            align: BOTTOM_MID
+            y: -10
+            width: 120
+            height: 56
+            styles: style_btn_accent
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).start_additional_pulse();
+            widgets:
+              - label:
+                  text: "PULSE"
+                  text_font: font32
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_purge_confirm — ask user to discard stale grinds
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_purge_confirm
+      bg_color: 0x000000
+      widgets:
+        - label:
+            text: "PURGE COMPLETE"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 24
+
+        - label:
+            text: "Discard the purge grinds\nfrom the portafilter,\nthen press Continue."
+            text_font: font24
+            text_color: 0xFFFFFF
+            align: CENTER
+            y: -40
+
+        - button:
+            id: btn_purge_continue
+            align: BOTTOM_MID
+            y: -20
+            width: 220
+            height: 60
+            styles: style_btn_success
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).continue_from_purge();
+                - lvgl.page.show: page_grinding
+            widgets:
+              - label:
+                  text: "CONTINUE"
+                  text_font: font32
+                  align: CENTER
+
+        - button:
+            align: BOTTOM_LEFT
+            x: 10
+            y: -20
+            width: 90
+            height: 60
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).stop_grind();
+                - lvgl.page.show: page_ready
+            widgets:
+              - label:
+                  text: "CANCEL"
+                  text_font: font24
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_menu — settings, tools, diagnostics
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_menu
+      bg_color: 0x000000
+      widgets:
+        - label:
+            text: "MENU"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 8
+
+        # Back button
+        - button:
+            align: TOP_LEFT
+            x: 8
+            y: 8
+            width: 70
+            height: 44
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_ready
+            widgets:
+              - label:
+                  text: "< BACK"
+                  text_font: font24
+                  align: CENTER
+
+        # ── Tools section ─────────────────────────────────────────────
+        - label:
+            text: "TOOLS"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 64
+
+        - button:
+            x: 10
+            y: 94
+            width: 260
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).request_tare();
+            widgets:
+              - label:
+                  text: "Scale View / Tare"
+                  text_font: font24
+                  align: CENTER
+
+        - button:
+            x: 10
+            y: 154
+            width: 260
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_calibration
+            widgets:
+              - label:
+                  text: "Calibrate Scale"
+                  text_font: font24
+                  align: CENTER
+
+        - button:
+            x: 10
+            y: 214
+            width: 260
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_autotune
+            widgets:
+              - label:
+                  text: "Tune Motor Latency"
+                  text_font: font24
+                  align: CENTER
+
+        # ── Settings section ──────────────────────────────────────────
+        - label:
+            text: "SETTINGS"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 278
+
+        - button:
+            x: 10
+            y: 308
+            width: 260
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_grind_settings
+            widgets:
+              - label:
+                  text: "Grind Settings"
+                  text_font: font24
+                  align: CENTER
+
+        # ── Info section ──────────────────────────────────────────────
+        - label:
+            text: "INFO"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 372
+
+        - button:
+            x: 10
+            y: 402
+            width: 260
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_diagnostics
+            widgets:
+              - label:
+                  text: "Diagnostics"
+                  text_font: font24
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_grind_settings — mode, purge, freshness, swipe
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_grind_settings
+      bg_color: 0x000000
+      widgets:
+        - label:
+            text: "GRIND SETTINGS"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 8
+
+        - button:
+            align: TOP_LEFT
+            x: 8
+            y: 8
+            width: 70
+            height: 44
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_menu
+            widgets:
+              - label:
+                  text: "< BACK"
+                  text_font: font24
+                  align: CENTER
+
+        # Mode: Weight / Time (radio-style toggle — simplified as two buttons)
+        - label:
+            text: "Mode"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 64
+
+        - button:
+            id: btn_mode_weight
+            x: 10
+            y: 94
+            width: 128
+            height: 50
+            styles: style_btn_primary
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).set_grind_mode(0);
+            widgets:
+              - label:
+                  text: "WEIGHT"
+                  text_font: font24
+                  align: CENTER
+
+        - button:
+            id: btn_mode_time
+            x: 142
+            y: 94
+            width: 128
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).set_grind_mode(1);
+            widgets:
+              - label:
+                  text: "TIME"
+                  text_font: font24
+                  align: CENTER
+
+        # Purge mode
+        - label:
+            text: "Purge Mode"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 160
+
+        - button:
+            id: btn_chute_prime
+            x: 10
+            y: 190
+            width: 128
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).set_chute_mode(0);
+            widgets:
+              - label:
+                  text: "PRIME"
+                  text_font: font24
+                  align: CENTER
+
+        - button:
+            id: btn_chute_purge
+            x: 142
+            y: 190
+            width: 128
+            height: 50
+            styles: style_btn_primary
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).set_chute_mode(1);
+            widgets:
+              - label:
+                  text: "PURGE"
+                  text_font: font24
+                  align: CENTER
+
+        # Freshness hours — numeric display with +/-
+        - label:
+            text: "Freshness (hours)"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 258
+
+        - button:
+            align: LEFT_MID
+            x: 10
+            y: 80
+            width: 60
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: |
+                    float h = id(grind_ctrl).freshness_hours_;
+                    if (h > 1.0f) id(grind_ctrl).set_freshness_hours(h - 1.0f);
+            widgets:
+              - label:
+                  text: "-"
+                  text_font: font32
+                  align: CENTER
+
+        - label:
+            id: lbl_freshness
+            text: "8h"
+            text_font: font32
+            text_color: 0xFFFFFF
+            align: CENTER
+            y: 80
+
+        - button:
+            align: RIGHT_MID
+            x: -10
+            y: 80
+            width: 60
+            height: 50
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: |
+                    float h = id(grind_ctrl).freshness_hours_;
+                    id(grind_ctrl).set_freshness_hours(h + 1.0f);
+            widgets:
+              - label:
+                  text: "+"
+                  text_font: font32
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_calibration — zero + reference weight procedure
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_calibration
+      bg_color: 0x000000
+      widgets:
+        - label:
+            text: "CALIBRATION"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 8
+
+        - button:
+            align: TOP_LEFT
+            x: 8
+            y: 8
+            width: 70
+            height: 44
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_menu
+            widgets:
+              - label:
+                  text: "< BACK"
+                  text_font: font24
+                  align: CENTER
+
+        - label:
+            text: "1. Remove all weight\n2. Press TARE\n3. Place 100g reference\n4. Press CALIBRATE"
+            text_font: font24
+            text_color: 0xFFFFFF
+            x: 12
+            y: 70
+
+        - label:
+            id: lbl_cal_weight
+            text: "0.0g"
+            text_font: font56
+            text_color: 0xFFFFFF
+            align: CENTER
+            y: 60
+
+        - button:
+            x: 10
+            y: 310
+            width: 124
+            height: 60
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).request_tare();
+            widgets:
+              - label:
+                  text: "TARE"
+                  text_font: font32
+                  align: CENTER
+
+        - button:
+            x: 146
+            y: 310
+            width: 124
+            height: 60
+            styles: style_btn_primary
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).start_calibration(100.0f);
+                - lvgl.page.show: page_menu
+            widgets:
+              - label:
+                  text: "CALIBRATE"
+                  text_font: font24
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_autotune — motor latency auto-tune
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_autotune
+      bg_color: 0x000000
+      widgets:
+        - label:
+            text: "AUTO-TUNE"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 8
+
+        - button:
+            align: TOP_LEFT
+            x: 8
+            y: 8
+            width: 70
+            height: 44
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).cancel_autotune();
+                - lvgl.page.show: page_menu
+            widgets:
+              - label:
+                  text: "< BACK"
+                  text_font: font24
+                  align: CENTER
+
+        - label:
+            text: "Measures motor response\nlatency for accurate pulse\ncorrections."
+            text_font: font24
+            text_color: 0xFFFFFF
+            x: 12
+            y: 70
+
+        - label:
+            id: lbl_autotune_status
+            text: "Idle"
+            text_font: font24
+            text_color: 0x00AAFF
+            align: CENTER
+            y: 20
+
+        - label:
+            id: lbl_autotune_latency
+            text: "Current: --"
+            text_font: font32
+            text_color: 0xFFFFFF
+            align: CENTER
+            y: 60
+
+        - button:
+            id: btn_autotune_start
+            align: BOTTOM_MID
+            y: -20
+            width: 200
+            height: 60
+            styles: style_btn_primary
+            on_click:
+              then:
+                - lambda: id(grind_ctrl).start_autotune();
+            widgets:
+              - label:
+                  text: "START TUNE"
+                  text_font: font32
+                  align: CENTER
+
+    # ────────────────────────────────────────────────────────────────────
+    # page_diagnostics — sensor health + counters
+    # ────────────────────────────────────────────────────────────────────
+    - id: page_diagnostics
+      bg_color: 0x000000
+      widgets:
+        - label:
+            text: "DIAGNOSTICS"
+            text_font: font36
+            text_color: 0xFF0000
+            align: TOP_MID
+            y: 8
+
+        - button:
+            align: TOP_LEFT
+            x: 8
+            y: 8
+            width: 70
+            height: 44
+            styles: style_btn_neutral
+            on_click:
+              then:
+                - lvgl.page.show: page_menu
+            widgets:
+              - label:
+                  text: "< BACK"
+                  text_font: font24
+                  align: CENTER
+
+        - label:
+            id: lbl_diag_calibrated
+            text: "Calibrated: YES"
+            text_font: font24
+            text_color: 0x00AA00
+            x: 12
+            y: 70
+
+        - label:
+            id: lbl_diag_noise
+            text: "Noise: OK"
+            text_font: font24
+            text_color: 0x00AA00
+            x: 12
+            y: 106
+
+        - label:
+            id: lbl_diag_latency
+            text: "Motor latency: 50.0ms"
+            text_font: font24
+            text_color: 0xFFFFFF
+            x: 12
+            y: 142
+
+        - label:
+            id: lbl_diag_mech
+            text: "Mech. events: 0"
+            text_font: font24
+            text_color: 0xFFFFFF
+            x: 12
+            y: 178
+
+        - label:
+            id: lbl_diag_last_grind
+            text: "Last error: n/a"
+            text_font: font24
+            text_color: 0xFFFFFF
+            x: 12
+            y: 214
+
+        - label:
+            id: lbl_diag_phase
+            text: "Phase: IDLE"
+            text_font: font24
+            text_color: 0xAAAAAA
+            x: 12
+            y: 250
+
+# ── Swipe gestures (when enabled via settings) ────────────────────────────────
+  on_swipe:
+    direction: LEFT
+    then:
+      - if:
+          condition:
+            - lambda: return id(grind_ctrl).swipe_enabled_;
+          then:
+            - logger.log: "Swipe left detected"
+    direction: RIGHT
+    then:
+      - if:
+          condition:
+            - lambda: return id(grind_ctrl).swipe_enabled_;
+          then:
+            - logger.log: "Swipe right detected"

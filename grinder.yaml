@@ -1,0 +1,51 @@
+################################################################################
+# Smart Grind-by-Weight — ESPHome main configuration
+# Hardware: Waveshare ESP32-S3 1.64" AMOLED + HX711 + motor relay
+################################################################################
+
+esphome:
+  name: smart-grinder
+  friendly_name: Smart Grinder
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+    version: recommended
+  flash_size: 16MB
+
+# ── Custom components ──────────────────────────────────────────────────────────
+external_components:
+  - source: components
+    components: [grind_controller, weight_sensor, sh8501_amoled]
+
+# ── Package includes ───────────────────────────────────────────────────────────
+packages:
+  hardware:    !include packages/hardware.yaml
+  ui:          !include packages/ui.yaml
+  automations: !include packages/automations.yaml
+
+# ── Connectivity ───────────────────────────────────────────────────────────────
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "SmartGrinder Fallback"
+    password: !secret ap_password
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+logger:
+  level: INFO
+
+# ── Time ───────────────────────────────────────────────────────────────────────
+time:
+  - platform: homeassistant
+    id: ha_time

@@ -1,0 +1,122 @@
+################################################################################
+# hardware.yaml — GPIO, I2C, display, touch, weight sensor, motor
+################################################################################
+
+# ── I2C for FT3168 capacitive touch ───────────────────────────────────────────
+i2c:
+  - id: i2c_touch
+    sda: GPIO47
+    scl: GPIO48
+    frequency: 400kHz
+    # ACK-checking disabled; idle NACKs flood logs when no finger present
+    scan: false
+
+# ── Weight sensor custom component ────────────────────────────────────────────
+# Owns the HX711 directly and provides the full filtering + flow-rate API
+# consumed by grind_controller.
+weight_sensor:
+  id: weight_sensor_component
+  dout_pin: GPIO3
+  clk_pin: GPIO2
+  calibration_factor: -7050.0  # USER_DEFAULT_CALIBRATION_FACTOR
+  sample_rate_sps: 10           # HW_LOADCELL_SAMPLE_RATE_SPS
+
+# ── Grind controller custom component ─────────────────────────────────────────
+grind_controller:
+  id: grind_ctrl
+  weight_sensor: weight_sensor_component
+  motor_pin: GPIO18
+  motor_settling_time_ms: 500   # HW_GRINDER_SETTLING_TIME_MS
+
+  # ── HA-visible sensor outputs ────────────────────────────────────────────
+  current_weight_sensor:
+    name: "Grind Weight"
+    unit_of_measurement: g
+    accuracy_decimals: 1
+    icon: mdi:scale
+  flow_rate_sensor:
+    name: "Flow Rate"
+    unit_of_measurement: "g/s"
+    accuracy_decimals: 2
+    icon: mdi:speedometer
+  phase_name_sensor:
+    name: "Grind Phase"
+    icon: mdi:state-machine
+  progress_sensor:
+    name: "Grind Progress"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    icon: mdi:progress-clock
+  pulse_count_sensor:
+    name: "Pulse Count"
+    accuracy_decimals: 0
+  last_grind_error_sensor:
+    name: "Last Grind Error"
+    unit_of_measurement: g
+    accuracy_decimals: 2
+  last_grind_duration_sensor:
+    name: "Last Grind Duration"
+    unit_of_measurement: ms
+    accuracy_decimals: 0
+  last_grind_final_weight_sensor:
+    name: "Last Grind Final Weight"
+    unit_of_measurement: g
+    accuracy_decimals: 1
+  mechanical_anomaly_sensor:
+    name: "Mechanical Anomalies"
+    accuracy_decimals: 0
+  is_calibrated_sensor:
+    name: "Load Cell Calibrated"
+  motor_latency_sensor:
+    name: "Motor Latency"
+    unit_of_measurement: ms
+    accuracy_decimals: 1
+
+# ── Touchscreen ───────────────────────────────────────────────────────────────
+touchscreen:
+  - platform: ft63x6
+    id: main_touch
+    i2c_id: i2c_touch
+    address: 0x38
+    interrupt_pin: GPIONC   # FT3168 INT pin — wire if available, else polling
+    on_touch:
+      - lambda: |-
+          ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
+
+# ── Display — SH8501 / CO5300 QSPI AMOLED ────────────────────────────────────
+display:
+  - platform: sh8501_amoled
+    id: main_display
+    cs_pin: GPIO9
+    sck_pin: GPIO10
+    d0_pin: GPIO11
+    d1_pin: GPIO12
+    d2_pin: GPIO13
+    d3_pin: GPIO14
+    reset_pin: GPIO21
+    width: 280
+    height: 456
+    update_interval: never    # LVGL drives refresh
+
+# ── LVGL fonts ────────────────────────────────────────────────────────────────
+font:
+  - file: "fonts/Montserrat-Regular.ttf"
+    id: font24
+    size: 24
+    bpp: 4
+    glyphs: "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~° "
+  - file: "fonts/Montserrat-Regular.ttf"
+    id: font32
+    size: 32
+    bpp: 4
+    glyphs: "0123456789.gOKCLSMENUABCDEFGHIJKLMNOPQRSTUVWXYZ+- "
+  - file: "fonts/Montserrat-Regular.ttf"
+    id: font36
+    size: 36
+    bpp: 4
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -_"
+  - file: "fonts/Montserrat-Regular.ttf"
+    id: font56
+    size: 56
+    bpp: 4
+    glyphs: "0123456789.-+ g"
