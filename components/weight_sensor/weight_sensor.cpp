@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstring>
 #include <driver/gpio.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 namespace esphome {
 namespace weight_sensor {
@@ -26,26 +28,28 @@ bool WeightSensorComponent::hx711_is_ready() const {
 bool WeightSensorComponent::hx711_read_raw(int32_t& out) {
     if (!hx711_is_ready()) return false;
 
-    // Critical section: don't get preempted during the 24+gain bits. If we
-    // are, PD_SCK stays high too long and the HX711 sleeps mid-read.
+    // Suspend the FreeRTOS scheduler over the bit-bang. This blocks task-
+    // level preemption (which was producing 24-bit-corrupted reads) while
+    // still allowing hardware interrupts — including the I2C interrupts the
+    // touchscreen driver depends on. A full InterruptLock here was likely
+    // breaking the touch I2C handshake at boot.
     int32_t raw = 0;
-    {
-        InterruptLock lock;
-        for (int i = 0; i < 24; i++) {
-            clk_pin_->digital_write(true);
-            delayMicroseconds(1);
-            raw = (raw << 1) | (dout_pin_->digital_read() ? 1 : 0);
-            clk_pin_->digital_write(false);
-            delayMicroseconds(1);
-        }
-        // Gain select pulses (1=128/A, 2=32/B, 3=64/A)
-        for (int i = 0; i < gain_pulses_; i++) {
-            clk_pin_->digital_write(true);
-            delayMicroseconds(1);
-            clk_pin_->digital_write(false);
-            delayMicroseconds(1);
-        }
+    vTaskSuspendAll();
+    for (int i = 0; i < 24; i++) {
+        clk_pin_->digital_write(true);
+        delayMicroseconds(1);
+        raw = (raw << 1) | (dout_pin_->digital_read() ? 1 : 0);
+        clk_pin_->digital_write(false);
+        delayMicroseconds(1);
     }
+    // Gain select pulses (1=128/A, 2=32/B, 3=64/A)
+    for (int i = 0; i < gain_pulses_; i++) {
+        clk_pin_->digital_write(true);
+        delayMicroseconds(1);
+        clk_pin_->digital_write(false);
+        delayMicroseconds(1);
+    }
+    xTaskResumeAll();
     // Sign extend 24-bit to 32-bit
     if (raw & 0x800000) raw |= 0xFF000000;
     out = raw;

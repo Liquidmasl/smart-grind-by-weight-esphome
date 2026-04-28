@@ -48,7 +48,11 @@ ota:
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logger:
-  level: INFO
+  level: DEBUG
+  logs:
+    # Touchscreen polling spams DEBUG even with no finger; keep its level lower.
+    ft5x06.touchscreen: INFO
+    touchscreen: INFO
 
 # ── Time ───────────────────────────────────────────────────────────────────────
 time:

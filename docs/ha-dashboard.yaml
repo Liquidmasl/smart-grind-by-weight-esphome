@@ -105,6 +105,7 @@ views:
                   color: "#FF6D00"
                   unit: g
                   type: line
+                  yaxis_id: weight
                 - entity: sensor.smart_grinder_flow_rate
                   name: Flow
                   color: "#29B6F6"
@@ -275,6 +276,7 @@ views:
                   func: last
                   duration: 1m
                 stroke_width: 0
+                yaxis_id: weight
               - entity: sensor.smart_grinder_last_grind_error
                 name: Error
                 color: "#FF6D00"
@@ -438,4 +440,3 @@ views:
                 color: "#FFA726"
                 type: area
                 stroke_width: 2
-                fill_raw: origin
