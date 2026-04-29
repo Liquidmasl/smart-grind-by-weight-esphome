@@ -128,20 +128,25 @@ void WeightSensorComponent::setup() {
         hardware_fault_ = true;
         return;
     }
+    // ESPHome's main loop and the I2C ISR run on Core 0 (IDF default for
+    // app_main on ESP32-S3). Pin the HX711 task to Core 1 so InterruptLock
+    // here disables Core 1 IRQs only, leaving Core 0's I2C ISR alive for
+    // the touchscreen driver.
     BaseType_t r = xTaskCreatePinnedToCore(
         &WeightSensorComponent::sampler_task_trampoline,
         "hx711_sampler",
         4096,
         this,
-        configMAX_PRIORITIES - 2,   // high priority on Core 0; ISRs still preempt
+        configMAX_PRIORITIES - 2,
         &sampler_task_,
-        0);                         // pin to Core 0
+        1);                         // pin to Core 1 (opposite of ESPHome)
     if (r != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sampler task");
         hardware_fault_ = true;
         return;
     }
-    ESP_LOGI(TAG, "HX711 sampler task running on Core 0");
+    ESP_LOGI(TAG, "HX711 sampler task pinned to Core 1 (ESPHome on Core %d)",
+             xPortGetCoreID());
 }
 
 // Trampoline → instance method
@@ -150,10 +155,13 @@ void WeightSensorComponent::sampler_task_trampoline(void* arg) {
 }
 
 void WeightSensorComponent::sampler_task_run() {
+    // Confirm we're actually on the core we asked for.
+    ESP_LOGI(TAG, "HX711 sampler task running on Core %d", xPortGetCoreID());
+
     // Hold off until the rest of ESPHome's setup (notably the touchscreen
-    // I2C probe at DATA priority) has finished. The Core-0 lock is per-CPU
-    // and shouldn't affect Core-1 ISRs, but in practice starting reads
-    // mid-setup correlated with touch probe failures. 2 s is plenty.
+    // I2C probe at DATA priority) has finished. The lock is per-CPU and
+    // shouldn't affect ISRs on the other core, but starting reads mid-
+    // setup correlated with touch probe failures earlier. 2 s is plenty.
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     // Tight polling loop on Core 0 — wake every 5 ms, read whenever HX711
