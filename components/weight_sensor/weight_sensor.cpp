@@ -28,28 +28,35 @@ bool WeightSensorComponent::hx711_is_ready() const {
 bool WeightSensorComponent::hx711_read_raw(int32_t& out) {
     if (!hx711_is_ready()) return false;
 
-    // Suspend the FreeRTOS scheduler over the bit-bang. This blocks task-
-    // level preemption (which was producing 24-bit-corrupted reads) while
-    // still allowing hardware interrupts — including the I2C interrupts the
-    // touchscreen driver depends on. A full InterruptLock here was likely
-    // breaking the touch I2C handshake at boot.
+    // Full interrupt lock over the bit-bang: the HX711 sleeps if PD_SCK
+    // stays high >~60 µs, and even hardware interrupts can push us past
+    // that. vTaskSuspendAll() alone wasn't enough — task preemption was
+    // covered but ISRs still produced corrupted reads.
+    //
+    // The earlier touch-probe-at-boot failures correlated with this lock
+    // but were actually caused by setup_priority ordering (weight_sensor
+    // and touchscreen both at DATA, non-deterministic). With weight_sensor
+    // forced to HARDWARE priority (see header) the touch driver gets a
+    // full 1-second clean-bus window before its probe, so the lock no
+    // longer interferes with boot.
     int32_t raw = 0;
-    vTaskSuspendAll();
-    for (int i = 0; i < 24; i++) {
-        clk_pin_->digital_write(true);
-        delayMicroseconds(1);
-        raw = (raw << 1) | (dout_pin_->digital_read() ? 1 : 0);
-        clk_pin_->digital_write(false);
-        delayMicroseconds(1);
+    {
+        InterruptLock lock;
+        for (int i = 0; i < 24; i++) {
+            clk_pin_->digital_write(true);
+            delayMicroseconds(1);
+            raw = (raw << 1) | (dout_pin_->digital_read() ? 1 : 0);
+            clk_pin_->digital_write(false);
+            delayMicroseconds(1);
+        }
+        // Gain select pulses (1=128/A, 2=32/B, 3=64/A)
+        for (int i = 0; i < gain_pulses_; i++) {
+            clk_pin_->digital_write(true);
+            delayMicroseconds(1);
+            clk_pin_->digital_write(false);
+            delayMicroseconds(1);
+        }
     }
-    // Gain select pulses (1=128/A, 2=32/B, 3=64/A)
-    for (int i = 0; i < gain_pulses_; i++) {
-        clk_pin_->digital_write(true);
-        delayMicroseconds(1);
-        clk_pin_->digital_write(false);
-        delayMicroseconds(1);
-    }
-    xTaskResumeAll();
     // Sign extend 24-bit to 32-bit
     if (raw & 0x800000) raw |= 0xFF000000;
     out = raw;
