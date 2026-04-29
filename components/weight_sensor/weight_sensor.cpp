@@ -150,10 +150,15 @@ void WeightSensorComponent::sampler_task_trampoline(void* arg) {
 }
 
 void WeightSensorComponent::sampler_task_run() {
+    // Hold off until the rest of ESPHome's setup (notably the touchscreen
+    // I2C probe at DATA priority) has finished. The Core-0 lock is per-CPU
+    // and shouldn't affect Core-1 ISRs, but in practice starting reads
+    // mid-setup correlated with touch probe failures. 2 s is plenty.
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
     // Tight polling loop on Core 0 — wake every 5 ms, read whenever HX711
     // signals ready, drop the sample into the queue. xQueueSend with 0
-    // timeout: if loop() on Core 1 is starving the queue we just discard
-    // (better than blocking the ISR-free read window).
+    // timeout: if loop() on Core 1 is starving the queue we just discard.
     for (;;) {
         if (hx711_is_ready()) {
             int32_t raw;
