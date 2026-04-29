@@ -90,21 +90,23 @@ probes will start failing again.
 
 `HARDWARE_LATE` does NOT exist in this ESPHome version — use `HARDWARE`.
 
-### HX711 critical section — soft, not hard
+### HX711 critical section — full InterruptLock
 
-`hx711_read_raw()` wraps the bit-bang in `vTaskSuspendAll()` /
-`xTaskResumeAll()`. Earlier we tried `InterruptLock` (which disables ALL
-interrupts on the core for ~50 µs every 100 ms). That correlated with
-boot-time touch I2C probe failures — even though the lock only runs in
-`loop()`, not `setup()`, ESPHome's main loop in early boot might
-interleave with the touch driver's poll, and the I2C ISR can't fire
-during the lock.
+`hx711_read_raw()` wraps the bit-bang in ESPHome's `InterruptLock`
+(disables CPU interrupts on the current core for the ~50 µs read).
+Anything weaker leaves the HX711 vulnerable to its 60 µs PD_SCK-high
+sleep threshold mid-byte and produces ±20 % weight noise.
 
-`vTaskSuspendAll` prevents task-level preemption (which is what was
-corrupting the bit-banged HX711 reads in the first place — manifested as
-±20 % weight noise, ~13–20 g when measuring 15.6 g) without blocking
-hardware interrupts. I2C stays alive, HX711 read is atomic. Don't change
-this back.
+We tried `vTaskSuspendAll()` as a softer alternative (blocks task
+preemption only, leaves ISRs running). Noise came back — hardware
+interrupts (WiFi tick, timer) were enough on their own to push the
+read past the sleep threshold. Don't soften it.
+
+The earlier theory that `InterruptLock` was breaking the touch I2C
+probe at boot was wrong. The actual cause was setup_priority ordering
+(weight_sensor and touchscreen both at DATA, non-deterministic). After
+forcing weight_sensor to `HARDWARE` (800) with a 1 s blocking init,
+the touch probe runs cleanly regardless of what `loop()` does.
 
 ### Calibration sign
 
