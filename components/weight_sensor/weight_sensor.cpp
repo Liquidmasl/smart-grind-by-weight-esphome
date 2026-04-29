@@ -1,9 +1,12 @@
 // weight_sensor.cpp — HX711 polling + filtering + persistence.
 //
-// InterruptLock around the bit-bang is required: the HX711 enters sleep
-// if PD_SCK stays high for >~60µs, which can happen if ESPHome's main loop
-// is preempted mid-read. Without the lock, ~1 in 50 reads gets garbage
-// bits and the weight reading jumps wildly.
+// HX711 bit-bang runs in a dedicated FreeRTOS task pinned to Core 0,
+// while ESPHome's main loop / I2C / touchscreen all run on Core 1.
+// InterruptLock around the bit-bang therefore disables interrupts on
+// Core 0 only — the I2C ISR keeps firing on Core 1 and the touch driver
+// is unaffected. Samples are pushed through a FreeRTOS queue and drained
+// by loop() on Core 1, where they feed CircularBufferMath, tare logic
+// and HA publishing.
 #include "weight_sensor.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -106,48 +109,95 @@ void WeightSensorComponent::setup() {
             // the FT3168 still has the full delay budget before touch probes.
             uint32_t remaining = deadline - millis();
             if (remaining > 0) delay(remaining);
-            return;
+            break;
         }
         delay(10);
     }
-    ESP_LOGE(TAG, "HX711 not responding — check wiring");
-    hardware_fault_ = true;
+    if (!initialized_) {
+        ESP_LOGE(TAG, "HX711 not responding — check wiring");
+        hardware_fault_ = true;
+        return;
+    }
+
+    // Spawn the dedicated sampler task pinned to Core 0. ESPHome runs on
+    // Core 1, so InterruptLock inside the task only blocks Core 0 — the
+    // I2C/touchscreen ISRs on Core 1 keep firing.
+    sample_queue_ = xQueueCreate(SAMPLE_QUEUE_LEN, sizeof(RawSample));
+    if (sample_queue_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create sample queue");
+        hardware_fault_ = true;
+        return;
+    }
+    BaseType_t r = xTaskCreatePinnedToCore(
+        &WeightSensorComponent::sampler_task_trampoline,
+        "hx711_sampler",
+        4096,
+        this,
+        configMAX_PRIORITIES - 2,   // high priority on Core 0; ISRs still preempt
+        &sampler_task_,
+        0);                         // pin to Core 0
+    if (r != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create sampler task");
+        hardware_fault_ = true;
+        return;
+    }
+    ESP_LOGI(TAG, "HX711 sampler task running on Core 0");
+}
+
+// Trampoline → instance method
+void WeightSensorComponent::sampler_task_trampoline(void* arg) {
+    static_cast<WeightSensorComponent*>(arg)->sampler_task_run();
+}
+
+void WeightSensorComponent::sampler_task_run() {
+    // Tight polling loop on Core 0 — wake every 5 ms, read whenever HX711
+    // signals ready, drop the sample into the queue. xQueueSend with 0
+    // timeout: if loop() on Core 1 is starving the queue we just discard
+    // (better than blocking the ISR-free read window).
+    for (;;) {
+        if (hx711_is_ready()) {
+            int32_t raw;
+            if (hx711_read_raw(raw)) {
+                RawSample s{ raw, (uint32_t)millis() };
+                xQueueSend(sample_queue_, &s, 0);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
 }
 
 void WeightSensorComponent::loop() {
-    if (hardware_fault_) return;
+    if (hardware_fault_ || sample_queue_ == nullptr) return;
 
-    if (!hx711_is_ready()) return;
+    // Drain whatever the sampler task has queued. Each iteration runs the
+    // same logic the old in-loop polling did, but the bit-bang itself is
+    // safely on Core 0 now.
+    RawSample s;
+    while (xQueueReceive(sample_queue_, &s, 0) == pdTRUE) {
+        raw_filter_.add_sample(s.raw, s.ts_ms);
 
-    int32_t raw;
-    if (!hx711_read_raw(raw)) return;
-
-    uint32_t now = millis();
-    raw_filter_.add_sample(raw, now);
-
-    // Tare accumulation
-    if (do_tare_) {
-        tare_accumulator_ += raw;
-        tare_sample_count_++;
-        if (tare_sample_count_ >= TARE_SAMPLES) {
-            tare_offset_ = (int32_t)(tare_accumulator_ / TARE_SAMPLES);
-            do_tare_ = false;
-            tare_sample_count_ = 0;
-            tare_accumulator_ = 0;
-            raw_filter_.reset_display_filter();
-            save_calibration();
-            ESP_LOGI(TAG, "Tare complete: offset=%ld", (long)tare_offset_);
+        // Tare accumulation
+        if (do_tare_) {
+            tare_accumulator_ += s.raw;
+            tare_sample_count_++;
+            if (tare_sample_count_ >= TARE_SAMPLES) {
+                tare_offset_ = (int32_t)(tare_accumulator_ / TARE_SAMPLES);
+                do_tare_ = false;
+                tare_sample_count_ = 0;
+                tare_accumulator_ = 0;
+                raw_filter_.reset_display_filter();
+                save_calibration();
+                ESP_LOGI(TAG, "Tare complete: offset=%ld", (long)tare_offset_);
+            }
         }
-    }
 
-    // Publish display weight to HA every loop cycle
-    if (weight_out_ != nullptr) {
-        // Publish at natural sensor rate (not every loop tick)
-        static uint32_t last_publish = 0;
-        if (now - last_publish >= 1000u / sample_rate_sps_) {
-            last_publish = now;
-            float w = get_display_weight();
-            weight_out_->publish_state(w);
+        // Publish display weight to HA at the natural sensor rate.
+        if (weight_out_ != nullptr) {
+            static uint32_t last_publish = 0;
+            if (s.ts_ms - last_publish >= 1000u / sample_rate_sps_) {
+                last_publish = s.ts_ms;
+                weight_out_->publish_state(get_display_weight());
+            }
         }
     }
 }

@@ -7,6 +7,9 @@
 #include "circular_buffer_math.h"
 #include <atomic>
 #include <cstdint>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
 
 namespace esphome {
 namespace weight_sensor {
@@ -111,6 +114,24 @@ private:
     bool  hx711_read_raw(int32_t& out);
     void  hx711_set_gain(uint8_t gain);
     void  hx711_power_up();
+
+    // ── Dedicated Core-0 sampler task ────────────────────────────────────
+    // The HX711 bit-bang lives in its own FreeRTOS task pinned to Core 0.
+    // ESPHome's main loop runs on Core 1, so disabling Core 0 interrupts
+    // around the bit-bang (with InterruptLock) doesn't touch the I2C ISR
+    // that the FT5x06 touchscreen driver depends on. Samples are pushed to
+    // a FreeRTOS queue and drained by loop() on Core 1, where they feed
+    // CircularBufferMath, tare accumulation, and HA publishing.
+    struct RawSample {
+        int32_t  raw;
+        uint32_t ts_ms;
+    };
+    TaskHandle_t   sampler_task_{nullptr};
+    QueueHandle_t  sample_queue_{nullptr};
+    static const int SAMPLE_QUEUE_LEN = 16;
+
+    static void sampler_task_trampoline(void* arg);
+    void sampler_task_run();
 
     float raw_to_weight(int32_t raw) const {
         if (cal_factor_ == 0.0f) return 0.0f;
