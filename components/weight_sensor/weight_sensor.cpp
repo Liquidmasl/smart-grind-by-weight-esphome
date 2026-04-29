@@ -164,16 +164,31 @@ void WeightSensorComponent::sampler_task_run() {
     // setup correlated with touch probe failures earlier. 2 s is plenty.
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    // Tight polling loop on Core 0 — wake every 5 ms, read whenever HX711
-    // signals ready, drop the sample into the queue. xQueueSend with 0
-    // timeout: if loop() on Core 1 is starving the queue we just discard.
+    // Tight polling loop on the pinned core — wake every 5 ms, read when
+    // HX711 signals ready, push to the queue. Heartbeat every 30 s so we
+    // can confirm via wireless logs that the task is alive and on the
+    // expected core (boot-time ESP_LOGI calls are not visible over the
+    // ESPHome API, which only attaches a few seconds after boot).
+    uint32_t samples_total = 0;
+    uint32_t samples_dropped = 0;
+    uint32_t last_heartbeat_ms = millis();
     for (;;) {
         if (hx711_is_ready()) {
             int32_t raw;
             if (hx711_read_raw(raw)) {
                 RawSample s{ raw, (uint32_t)millis() };
-                xQueueSend(sample_queue_, &s, 0);
+                if (xQueueSend(sample_queue_, &s, 0) == pdTRUE) {
+                    samples_total++;
+                } else {
+                    samples_dropped++;
+                }
             }
+        }
+        uint32_t now = millis();
+        if (now - last_heartbeat_ms >= 30000) {
+            last_heartbeat_ms = now;
+            ESP_LOGI(TAG, "sampler heartbeat: core=%d samples=%u dropped=%u",
+                     xPortGetCoreID(), samples_total, samples_dropped);
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
