@@ -57,9 +57,12 @@ void FT3168Touchscreen::setup() {
         return;
     }
 
-    // Default raw coordinate range — matches FT3168's 12-bit output.
-    this->x_raw_max_ = 4095;
-    this->y_raw_max_ = 4095;
+    // FT3168 reports touch coordinates in panel-native pixels (0..279 X,
+    // 0..455 Y for our 280×456 panel) — NOT in the 12-bit register max.
+    // ESPHome's Touchscreen base scales raw → display using these limits,
+    // so set them to the real panel max-1 to get a 1:1 mapping.
+    this->x_raw_max_ = 279;
+    this->y_raw_max_ = 455;
 
     ready_ = true;
     ESP_LOGI(TAG, "FT3168 initialised (NACKs treated as no-touch)");
