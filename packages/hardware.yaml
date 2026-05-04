@@ -146,6 +146,7 @@ touchscreen:
       - lambda: |-
           ESP_LOGD("touch", "touch at x=%d y=%d", touch.x, touch.y);
           id(last_touch_ms) = millis();
+          id(display_dimmed) = false;   // any touch wakes the auto-off gate
 
 # ── Display — Waveshare 1.64" AMOLED (CO5300 via QSPI) ───────────────────────
 # Uses ESPHome's built-in mipi_spi platform with the bundled CO5300 init

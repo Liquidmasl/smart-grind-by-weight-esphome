@@ -359,8 +359,11 @@ switch:
     optimistic: true
     turn_on_action:
       - lvgl.page.show: page_ready
-      - lambda: 'id(last_touch_ms) = millis();'
+      - lambda: |-
+          id(last_touch_ms) = millis();
+          id(display_dimmed) = false;
     turn_off_action:
+      - lambda: 'id(display_dimmed) = true;'
       - lvgl.page.show: page_off
 
 # ── Interval: update UI labels every 250 ms ───────────────────────────────────
@@ -481,6 +484,10 @@ interval:
       - if:
           condition:
             lambda: |-
+              // Only fire the off transition once. display_dimmed gates the
+              // action so the log line and page show don't repeat every poll
+              // until the user touches the screen again.
+              if (id(display_dimmed)) return false;
               if (id(screen_timeout).state <= 0) return false;
               if (id(grind_ctrl).is_active()) return false;
               uint32_t last = id(last_touch_ms);
@@ -488,8 +495,10 @@ interval:
               uint32_t idle_ms = millis() - last;
               return idle_ms >= (uint32_t)id(screen_timeout).state * 1000u;
           then:
+            - lambda: |-
+                id(display_dimmed) = true;
+                ESP_LOGI("display", "Auto-off after %.0f s idle", id(screen_timeout).state);
             - lvgl.page.show: page_off
-            - lambda: 'ESP_LOGI("display", "Auto-off after %.0f s idle", id(screen_timeout).state);'
 
 # ── Version / build info ──────────────────────────────────────────────────────
 text_sensor:
