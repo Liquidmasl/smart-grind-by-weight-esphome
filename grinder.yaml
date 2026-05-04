@@ -48,11 +48,10 @@ ota:
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logger:
-  level: DEBUG
+  level: INFO
   logs:
-    # Touchscreen polling spams DEBUG even with no finger; keep its level lower.
-    ft5x06.touchscreen: INFO
-    touchscreen: INFO
+    # Mute the per-publish sensor state lines; we have HA history for that.
+    sensor: WARN
 
 # ── Time ───────────────────────────────────────────────────────────────────────
 time:

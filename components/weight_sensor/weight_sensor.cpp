@@ -1,12 +1,12 @@
 // weight_sensor.cpp — HX711 polling + filtering + persistence.
 //
-// HX711 bit-bang runs in a dedicated FreeRTOS task pinned to Core 0,
-// while ESPHome's main loop / I2C / touchscreen all run on Core 1.
-// InterruptLock around the bit-bang therefore disables interrupts on
-// Core 0 only — the I2C ISR keeps firing on Core 1 and the touch driver
-// is unaffected. Samples are pushed through a FreeRTOS queue and drained
-// by loop() on Core 1, where they feed CircularBufferMath, tare logic
-// and HA publishing.
+// The HX711 bit-bang runs in a dedicated FreeRTOS task pinned to Core 1,
+// while ESPHome's main loop / I2C / touchscreen ISR all sit on Core 0.
+// vTaskSuspendAll() over the bit-bang prevents task-level preemption of
+// the 24-bit read without disabling any hardware interrupts — Core 0's
+// I2C ISR (touch driver) and Core 1's bit-bang are completely isolated.
+// Samples are pushed through a FreeRTOS queue and drained by loop() on
+// Core 0, where they feed CircularBufferMath, tare logic, and HA publish.
 #include "weight_sensor.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -92,13 +92,11 @@ void WeightSensorComponent::setup() {
     // Load calibration from NVS
     load_calibration();
 
-    // Wait for first sample (up to 2.5 s). This blocking window is also used
-    // as a guaranteed startup delay for the FT3168 touch IC — the touchscreen
-    // driver, which sits at the next priority tier down, won't start probing
-    // I2C until this returns. See get_setup_priority() in the header.
-    // 2.5 s vs the original 1 s gives the FT3168 a more generous settle
-    // budget; some boards seem to need it occasionally.
-    uint32_t deadline = millis() + 2500;
+    // Wait for first sample (up to 1 s). This blocking window doubles as a
+    // guaranteed startup delay for the FT3168 touch IC — the touchscreen
+    // driver runs at DATA priority (lower than this component's HARDWARE),
+    // so it can't probe I2C until this returns. See get_setup_priority().
+    uint32_t deadline = millis() + 1000;
     while (millis() < deadline) {
         if (hx711_is_ready()) {
             int32_t dummy;
@@ -120,34 +118,23 @@ void WeightSensorComponent::setup() {
         return;
     }
 
-    // Spawn the dedicated sampler task pinned to Core 0. ESPHome runs on
-    // Core 1, so InterruptLock inside the task only blocks Core 0 — the
-    // I2C/touchscreen ISRs on Core 1 keep firing.
+    // Spawn the dedicated sampler task pinned to Core 1 (ESPHome runs on
+    // Core 0). Pinning isolates the bit-bang's vTaskSuspendAll() from the
+    // I2C ISR / main loop on Core 0.
     sample_queue_ = xQueueCreate(SAMPLE_QUEUE_LEN, sizeof(RawSample));
     if (sample_queue_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create sample queue");
         hardware_fault_ = true;
         return;
     }
-    // ESPHome's main loop and the I2C ISR run on Core 0 (IDF default for
-    // app_main on ESP32-S3). Pin the HX711 task to Core 1 so InterruptLock
-    // here disables Core 1 IRQs only, leaving Core 0's I2C ISR alive for
-    // the touchscreen driver.
     BaseType_t r = xTaskCreatePinnedToCore(
         &WeightSensorComponent::sampler_task_trampoline,
-        "hx711_sampler",
-        4096,
-        this,
-        configMAX_PRIORITIES - 2,
-        &sampler_task_,
-        1);                         // pin to Core 1 (opposite of ESPHome)
+        "hx711_sampler", 4096, this,
+        configMAX_PRIORITIES - 2, &sampler_task_, 1);
     if (r != pdPASS) {
         ESP_LOGE(TAG, "Failed to create sampler task");
         hardware_fault_ = true;
-        return;
     }
-    ESP_LOGI(TAG, "HX711 sampler task pinned to Core 1 (ESPHome on Core %d)",
-             xPortGetCoreID());
 }
 
 // Trampoline → instance method
@@ -156,40 +143,17 @@ void WeightSensorComponent::sampler_task_trampoline(void* arg) {
 }
 
 void WeightSensorComponent::sampler_task_run() {
-    // Confirm we're actually on the core we asked for.
-    ESP_LOGI(TAG, "HX711 sampler task running on Core %d", xPortGetCoreID());
-
-    // Hold off until the rest of ESPHome's setup (notably the touchscreen
-    // I2C probe at DATA priority) has finished. The lock is per-CPU and
-    // shouldn't affect ISRs on the other core, but starting reads mid-
-    // setup correlated with touch probe failures earlier. 2 s is plenty.
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // Tight polling loop on the pinned core — wake every 5 ms, read when
-    // HX711 signals ready, push to the queue. Heartbeat every 30 s so we
-    // can confirm via wireless logs that the task is alive and on the
-    // expected core (boot-time ESP_LOGI calls are not visible over the
-    // ESPHome API, which only attaches a few seconds after boot).
-    uint32_t samples_total = 0;
-    uint32_t samples_dropped = 0;
-    uint32_t last_heartbeat_ms = millis();
+    // Tight polling loop. Wake every 5 ms, read whenever HX711 signals
+    // ready, push raw + timestamp to the queue. xQueueSend with 0 timeout:
+    // if loop() on Core 0 is starving the queue we silently drop (better
+    // than blocking the read window on this core).
     for (;;) {
         if (hx711_is_ready()) {
             int32_t raw;
             if (hx711_read_raw(raw)) {
                 RawSample s{ raw, (uint32_t)millis() };
-                if (xQueueSend(sample_queue_, &s, 0) == pdTRUE) {
-                    samples_total++;
-                } else {
-                    samples_dropped++;
-                }
+                xQueueSend(sample_queue_, &s, 0);
             }
-        }
-        uint32_t now = millis();
-        if (now - last_heartbeat_ms >= 30000) {
-            last_heartbeat_ms = now;
-            ESP_LOGI(TAG, "sampler heartbeat: core=%d samples=%u dropped=%u",
-                     xPortGetCoreID(), samples_total, samples_dropped);
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
