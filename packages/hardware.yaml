@@ -31,16 +31,26 @@ grind_controller:
   motor_settling_time_ms: 500   # HW_GRINDER_SETTLING_TIME_MS
 
   # ── HA-visible sensor outputs ────────────────────────────────────────────
+  # ESPHome's sensor.publish_state logs every change at the [S] state level
+  # which is always-visible regardless of logger level. Filters here drop
+  # publishes that don't move meaningfully — keeps the log readable AND
+  # reduces HA recorder churn for idle drift.
   current_weight_sensor:
     name: "Grind Weight"
     unit_of_measurement: g
     accuracy_decimals: 1
     icon: mdi:scale
+    filters:
+      - delta: 0.05            # only republish on ≥0.05 g change
+      - throttle: 100ms        # cap to 10 Hz max
   flow_rate_sensor:
     name: "Flow Rate"
     unit_of_measurement: "g/s"
     accuracy_decimals: 2
     icon: mdi:speedometer
+    filters:
+      - delta: 0.05
+      - throttle: 100ms
   phase_name_sensor:
     name: "Grind Phase"
     icon: mdi:state-machine
@@ -103,12 +113,16 @@ grind_controller:
   mechanical_anomaly_sensor:
     name: "Mechanical Anomalies"
     accuracy_decimals: 0
+    filters:
+      - delta: 1               # integer counter; only on actual increment
   is_calibrated_sensor:
     name: "Load Cell Calibrated"
   motor_latency_sensor:
     name: "Motor Latency"
     unit_of_measurement: ms
     accuracy_decimals: 1
+    filters:
+      - delta: 0.1             # rarely changes; only on autotune update
 
 # ── Touchscreen — FT3168 (FT5x06 register-compatible) ────────────────────────
 # The Waveshare 1.64" AMOLED carries an FT3168 capacitive touch IC. It speaks
