@@ -22,7 +22,7 @@ namespace ft3168_touch {
 // SDA/SCL pins it's given. Don't also configure ESPHome's `i2c:` block on
 // the same pins — they'd collide on the same I2C peripheral.
 // ============================================================================
-class FT3168Touchscreen : public touchscreen::Touchscreen, public Component {
+class FT3168Touchscreen : public touchscreen::Touchscreen {
 public:
     void set_sda_pin(int pin)            { sda_pin_ = pin; }
     void set_scl_pin(int pin)            { scl_pin_ = pin; }
