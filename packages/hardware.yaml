@@ -2,14 +2,10 @@
 # hardware.yaml — GPIO, I2C, display, touch, weight sensor, motor
 ################################################################################
 
-# ── I2C for FT3168 capacitive touch ───────────────────────────────────────────
-i2c:
-  - id: i2c_touch
-    sda: GPIO47
-    scl: GPIO48
-    frequency: 400kHz
-    # ACK-checking disabled; idle NACKs flood logs when no finger present
-    scan: false
+# NOTE: We don't configure ESPHome's `i2c:` component here. The custom
+# ft3168_touch component (see below) owns the I2C peripheral on GPIO47/48
+# directly via IDF, which lets it disable ACK checking — required because
+# the FT3168 NACKs polls when idle and the board doesn't wire TP_INT.
 
 # ── Weight sensor custom component ────────────────────────────────────────────
 # Owns the HX711 directly and provides the full filtering + flow-rate API
@@ -124,15 +120,24 @@ grind_controller:
     filters:
       - delta: 0.1             # rarely changes; only on autotune update
 
-# ── Touchscreen — FT3168 (FT5x06 register-compatible) ────────────────────────
-# The Waveshare 1.64" AMOLED carries an FT3168 capacitive touch IC. It speaks
-# the FT5x06 register set, so ESPHome's built-in `ft5x06` platform drives it
-# directly at I2C 0x38. Gesture (swipe) detection is handled in LVGL.
+# ── Touchscreen — FT3168 via custom IDF I2C driver ───────────────────────────
+# The Waveshare 1.64" board leaves TP_INT and TP_RST unconnected (verified
+# from the schematic — both have NC marks). So the chip can only be driven
+# by polling, and the FT3168 NACKs polls while idle. ESPHome's stock ft5x06
+# platform aborts on the first NACK and marks the touchscreen FAILED — that's
+# the intermittent boot failure we kept seeing.
+#
+# The custom `ft3168_touch` component below talks to the chip directly via
+# IDF's I2C master with `disable_ack_check` set, so NACKs are treated as
+# "no touch" instead of errors. Same workaround the original PlatformIO
+# firmware uses (touch_driver.cpp in the upstream repo).
 touchscreen:
-  - platform: ft5x06
+  - platform: ft3168_touch
     id: main_touch
-    i2c_id: i2c_touch
+    sda_pin: GPIO47
+    scl_pin: GPIO48
     address: 0x38
+    frequency: 300kHz
     transform:
       mirror_x: true
       mirror_y: true

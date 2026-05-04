@@ -22,7 +22,7 @@ psram:
 # ── Custom components ──────────────────────────────────────────────────────────
 external_components:
   - source: components
-    components: [grind_controller, weight_sensor]
+    components: [grind_controller, weight_sensor, ft3168_touch]
 
 # ── Package includes ───────────────────────────────────────────────────────────
 packages:
