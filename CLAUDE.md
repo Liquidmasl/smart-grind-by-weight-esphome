@@ -90,23 +90,36 @@ probes will start failing again.
 
 `HARDWARE_LATE` does NOT exist in this ESPHome version — use `HARDWARE`.
 
-### HX711 critical section — full InterruptLock
+### HX711 critical section + Core 1 task isolation
 
-`hx711_read_raw()` wraps the bit-bang in ESPHome's `InterruptLock`
-(disables CPU interrupts on the current core for the ~50 µs read).
-Anything weaker leaves the HX711 vulnerable to its 60 µs PD_SCK-high
-sleep threshold mid-byte and produces ±20 % weight noise.
+`hx711_read_raw()` runs in a dedicated FreeRTOS task pinned to **Core 1**
+(ESPHome's main loop and the touchscreen I2C ISR live on Core 0). The
+bit-bang wraps in `vTaskSuspendAll()` / `xTaskResumeAll()` to prevent
+task-level preemption of the 24-bit read. Hardware interrupts keep
+firing on every core — crucially, Core 0's I2C ISR for the FT5x06 touch
+driver is never blocked.
 
-We tried `vTaskSuspendAll()` as a softer alternative (blocks task
-preemption only, leaves ISRs running). Noise came back — hardware
-interrupts (WiFi tick, timer) were enough on their own to push the
-read past the sleep threshold. Don't soften it.
+Don't change this back to `InterruptLock` — that disables CPU interrupts
+on the current core, and broke the touch driver every time we tried it.
 
-The earlier theory that `InterruptLock` was breaking the touch I2C
-probe at boot was wrong. The actual cause was setup_priority ordering
-(weight_sensor and touchscreen both at DATA, non-deterministic). After
-forcing weight_sensor to `HARDWARE` (800) with a 1 s blocking init,
-the touch probe runs cleanly regardless of what `loop()` does.
+**Important debugging history.** During iteration we thought `InterruptLock`
+fixed weight noise that `vTaskSuspendAll` couldn't. That was wrong. The
+"noise" we saw with `vTaskSuspendAll` was actually a corrupted `cal_factor`
+(`-4.423` instead of the proper `~-25000`) amplifying tiny load-cell drift
+by ~5760×. A proper calibration made the readings stable with the soft
+lock. We chased the wrong root cause for hours — if the weight ever looks
+like it's noise-amplified, **check `cal_factor` first** before assuming
+bit-bang corruption.
+
+Samples flow Core 1 → FreeRTOS queue (16 slots, `RawSample{int32_t raw,
+uint32_t ts_ms}`) → drained by `loop()` on Core 0 into `CircularBufferMath`
++ tare accumulation + HA publish. The task starts after a 2 s delay so
+ESPHome setup (touchscreen probe!) has clean air on Core 0 first.
+
+A 30-second heartbeat log line (`sampler heartbeat: core=N samples=N
+dropped=N`) is in there for diagnostic visibility — boot-time `ESP_LOGI`
+calls aren't visible over the wireless API which only attaches several
+seconds after boot.
 
 ### Calibration sign
 
