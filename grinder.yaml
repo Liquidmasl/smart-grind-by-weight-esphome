@@ -20,15 +20,19 @@ psram:
   speed: 80MHz
 
 # ── Custom components ──────────────────────────────────────────────────────────
+# Paths are prefixed with the repo subfolder name because grinder.yaml is
+# symlinked one level up into /config/esphome/ and ESPHome resolves includes
+# relative to the symlink location, not the real file. If you rename the
+# cloned directory, update the four occurrences below.
 external_components:
-  - source: components
+  - source: smart-grind-by-weight-esphome/components
     components: [grind_controller, weight_sensor, ft3168_touch]
 
 # ── Package includes ───────────────────────────────────────────────────────────
 packages:
-  hardware:    !include packages/hardware.yaml
-  ui:          !include packages/ui.yaml
-  automations: !include packages/automations.yaml
+  hardware:    !include smart-grind-by-weight-esphome/packages/hardware.yaml
+  ui:          !include smart-grind-by-weight-esphome/packages/ui.yaml
+  automations: !include smart-grind-by-weight-esphome/packages/automations.yaml
 
 # ── Connectivity ───────────────────────────────────────────────────────────────
 wifi:
